@@ -145,7 +145,8 @@ install.packages(c(
   "RcppDist",
   "purrr",
   "rstudioapi",
-  "mcclust"
+  "mcclust",
+  "labeling"
 ))
 ```
 
@@ -177,7 +178,8 @@ required_packages <- c(
   "RcppDist",
   "purrr",
   "rstudioapi",
-  "mcclust"
+  "mcclust",
+  "labeling"
 )
 
 missing_packages <- required_packages[

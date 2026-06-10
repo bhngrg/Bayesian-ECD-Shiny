@@ -30,5 +30,6 @@ Imports:
     RcppDist,
     purrr,
     rstudioapi,
-    mcclust
-
+    mcclust,
+    labeling
+    
