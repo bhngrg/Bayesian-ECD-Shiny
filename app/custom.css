@@ -1,0 +1,225 @@
+/* =========================================================
+   Global app typography
+   ========================================================= */
+
+body {
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  color: #222;
+}
+
+/* =========================================================
+   Navbar
+   ========================================================= */
+
+.navbar,
+.navbar-brand,
+.navbar-nav > li > a,
+.nav-link {
+  font-size: 18px !important;
+}
+
+.navbar-brand {
+  font-size: 24px !important;
+  font-weight: 700 !important;
+}
+
+/* =========================================================
+   Sidebar text
+   ========================================================= */
+
+.help-block {
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  color: #333;
+  font-weight: bold;
+  line-height: 1.35;
+}
+
+.help-block ul li {
+  list-style-type: disc;
+  font-size: 16px;
+  font-weight: normal;
+  line-height: 1.35;
+}
+
+/* =========================================================
+   Labels, inputs, dropdowns
+   ========================================================= */
+
+label,
+.control-label {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+}
+
+.form-control,
+.selectize-input,
+.selectize-dropdown,
+input,
+select,
+textarea {
+  font-size: 18px !important;
+  min-height: 42px !important;
+}
+
+.selectize-dropdown-content {
+  font-size: 18px !important;
+}
+
+/* =========================================================
+   Regular app buttons
+   Do NOT apply this styling to the sidebar toggle button.
+   ========================================================= */
+
+.btn:not(.collapse-toggle):not(.sidebar-toggle),
+button:not(.collapse-toggle):not(.sidebar-toggle):not([aria-label*="Toggle"]),
+input[type="submit"] {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  padding: 10px 22px !important;
+}
+
+/* Download buttons */
+.btn-default,
+.btn-primary {
+  font-size: 18px !important;
+}
+
+/* =========================================================
+   Sidebar toggle button
+   Keeps the icon visible but removes the gray button box.
+   ========================================================= */
+
+button.collapse-toggle,
+button.sidebar-toggle,
+button[aria-label*="Toggle"],
+.sidebar-toggle,
+.bslib-sidebar-layout .collapse-toggle,
+.bslib-sidebar-layout button.collapse-toggle,
+.bslib-sidebar-layout > .collapse-toggle {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  min-height: 34px !important;
+
+  padding: 0 !important;
+  margin: 0 !important;
+
+  align-items: center !important;
+  justify-content: center !important;
+
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+
+  color: #555 !important;
+  z-index: 9999 !important;
+}
+
+/* Remove gray box on hover/focus/active */
+button.collapse-toggle:hover,
+button.sidebar-toggle:hover,
+button[aria-label*="Toggle"]:hover,
+.sidebar-toggle:hover,
+.bslib-sidebar-layout .collapse-toggle:hover,
+.bslib-sidebar-layout button.collapse-toggle:hover,
+.bslib-sidebar-layout > .collapse-toggle:hover,
+button.collapse-toggle:focus,
+button.sidebar-toggle:focus,
+button[aria-label*="Toggle"]:focus,
+.sidebar-toggle:focus,
+.bslib-sidebar-layout .collapse-toggle:focus,
+.bslib-sidebar-layout button.collapse-toggle:focus,
+.bslib-sidebar-layout > .collapse-toggle:focus,
+button.collapse-toggle:active,
+button.sidebar-toggle:active,
+button[aria-label*="Toggle"]:active,
+.sidebar-toggle:active,
+.bslib-sidebar-layout .collapse-toggle:active,
+.bslib-sidebar-layout button.collapse-toggle:active,
+.bslib-sidebar-layout > .collapse-toggle:active {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Toggle icon */
+button.collapse-toggle svg,
+button.sidebar-toggle svg,
+button[aria-label*="Toggle"] svg,
+.sidebar-toggle svg,
+.collapse-toggle svg,
+.sidebar-toggle i,
+.collapse-toggle i {
+  display: block !important;
+  width: 18px !important;
+  height: 18px !important;
+  color: #555 !important;
+  fill: #555 !important;
+  stroke: #555 !important;
+}
+
+/* =========================================================
+   DataTables
+   ========================================================= */
+
+.dataTables_wrapper {
+  font-size: 18px !important;
+}
+
+.dataTables_wrapper table.dataTable {
+  font-size: 18px !important;
+}
+
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_paginate {
+  font-size: 18px !important;
+}
+
+.dataTables_wrapper input,
+.dataTables_wrapper select {
+  font-size: 18px !important;
+  height: 40px !important;
+}
+
+/* Table header */
+table.dataTable thead th {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+}
+
+/* Table cells */
+table.dataTable tbody td {
+  font-size: 18px !important;
+}
+
+/* Pagination buttons */
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  font-size: 18px !important;
+}
+
+table.dataTable thead th,
+table.dataTable tbody td {
+  text-align: left !important;
+}
+
+/* =========================================================
+   Optional: make DataTables more screenshot friendly
+   ========================================================= */
+
+.dataTables_wrapper table.dataTable thead th,
+.dataTables_wrapper table.dataTable tbody td {
+  padding: 10px 12px !important;
+}
