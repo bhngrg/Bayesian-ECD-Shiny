@@ -454,6 +454,12 @@ ui <- navset_bar(
 # Server logic ----
 server <- function(input, output, session) {
   
+  session$onSessionEnded(function() {
+    try(foreach::registerDoSEQ(), silent = TRUE)
+    gc()
+    stopApp()
+  })
+  
   input.specs <- reactive({
     req(input$response)
     req(input$censor_ind)

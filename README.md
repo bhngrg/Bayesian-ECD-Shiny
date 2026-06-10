@@ -153,6 +153,7 @@ install.packages(c(
   "RcppDist",
   "purrr",
   "rstudioapi"
+  "mcclust"
 ))
 ```
 
@@ -200,6 +201,7 @@ required_packages <- c(
   "RcppGSL",
   "purrr",
   "rstudioapi"
+  "mcclust"
 )
 
 missing_packages <- required_packages[
@@ -215,27 +217,44 @@ if (length(missing_packages) == 0) {
 
 ## Run the app
 
-Open RStudio and make sure your working directory is the repository root folder.
+The recommended way to run the app is from **RStudio** using **Run in Window**.
+
+First, open the repository folder in RStudio. Make sure your working directory is the repository root folder.
 
 You can check your current working directory by running:
 
 ```r
 getwd()
 ```
-
 If needed, set the working directory manually. For example:
 
 ```r
 setwd("path/to/your/repository-folder")
 ```
 
-Then run:
+Then open:
+
+```text
+app/app.R
+```
+
+In RStudio, click the drop-down arrow next to **Run App** and select:
+
+```text
+Run in Window
+```
+
+This is the preferred launch method for local testing. External browser mode can sometimes open multiple browser tabs if older Shiny sessions are still active.
+
+When finished, stop the app using the red **Stop** button in RStudio before launching it again.
+
+Alternatively, the app can be launched from the R console with:
 
 ```r
 shiny::runApp("app")
 ```
 
-Alternatively, open `app/app.R` in RStudio and click **Run App**.
+However, for most users, **Run App > Run in Window** is recommended.
 
 ## Example workflow
 

@@ -147,6 +147,9 @@ rmst_lognormal <- function(result, cntrl, trt, t_star, burnin = 200) {
     )
   }
   
+  try(parallel::stopCluster(cl), silent = TRUE)
+  try(foreach::registerDoSEQ(), silent = TRUE)
+  
   surv1.median <- exp(apply(logsurv1, 1, stats::median))
   surv2.median <- exp(apply(logsurv2, 1, stats::median))
   
@@ -349,6 +352,9 @@ RMST_result <- function(result_subgroup_data = list(), time_horizons = c()) {
       )
     )
   }
+  
+  try(parallel::stopCluster(cl), silent = TRUE)
+  try(foreach::registerDoSEQ(), silent = TRUE)
   
   names(RMST_results) <- paste(time_horizons, "days", sep = " ")
   

@@ -62,6 +62,7 @@ CRAN/package dependencies:
 - writexl
 - zip
 - Rcpp
+- mcclust
 
 Base/recommended R packages:
 - stats

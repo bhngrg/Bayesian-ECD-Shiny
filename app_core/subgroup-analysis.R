@@ -294,9 +294,13 @@ subgroup_data <- function(result,
                parallel::detectCores() - 1, 
                1)
   
-  cl <- makeCluster(cl)
+  cl <- parallel::makeCluster(cl)
+  doParallel::registerDoParallel(cl)
   
-  registerDoParallel(cl)
+  on.exit({
+    try(parallel::stopCluster(cl), silent = TRUE)
+    try(foreach::registerDoSEQ(), silent = TRUE)
+  }, add = TRUE)
   
   # surv_trt <- parLapply(cl = cl, 1:length(timepoints), function(i) {
   #   tmp <- pnorm(q = timepoints[i], mean = thetas[[trt_indices[1]]][ , subgroup_ind],
@@ -360,7 +364,8 @@ subgroup_data <- function(result,
     # ifelse(tmp3 > max(tmp3)/4, max(tmp3)/4, tmp3)
   })
   
-  stopCluster(cl)
+  try(parallel::stopCluster(cl), silent = TRUE)
+  try(foreach::registerDoSEQ(), silent = TRUE)
   
   rm(f_trt, f_rwd)
   

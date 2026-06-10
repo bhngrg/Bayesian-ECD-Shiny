@@ -31,3 +31,4 @@ Imports:
     RcppGSL,
     purrr,
     rstudioapi
+    mcclust

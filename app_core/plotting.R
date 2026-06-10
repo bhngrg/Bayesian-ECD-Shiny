@@ -144,7 +144,8 @@ plots_lognormal <- function(result, cntrl, trt, timepoints, burnin = 1e3,
     })
   }
   
-  parallel::stopCluster(cl)
+  try(parallel::stopCluster(cl), silent = TRUE)
+  try(foreach::registerDoSEQ(), silent = TRUE)
   
   # Hazard rate plot
   log.hr1 <- apply(logdens1 - logsurv1, 1, stats::median)
