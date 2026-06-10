@@ -80,15 +80,13 @@ This is the simplest option for first-time users.
 If you use Git, run the following in Terminal or Git Bash:
 
 ```bash
-git clone https://github.com/USERNAME/REPOSITORY.git
-cd REPOSITORY
+git clone https://github.com/bhngrg/Bayesian-ECD-Shiny.git
+cd Bayesian-ECD-Shiny
 ```
-
-Replace `USERNAME` and `REPOSITORY` with the actual GitHub username and repository name.
 
 ## Install dependencies
 
-This app uses a mixture of regular R packages and C++-backed R packages. Most dependencies install directly from CRAN, but `RcppGSL` may require an additional system library called the GNU Scientific Library (GSL).
+This app uses a mixture of regular R packages and C++-backed R packages. All listed R package dependencies are available from CRAN. The C++ code is compiled through `Rcpp`, `RcppArmadillo`, and `RcppDist`.
 
 ### Step 1: Install system requirements for compiled R packages
 
@@ -102,19 +100,13 @@ Install Xcode command line tools by running this in Terminal:
 xcode-select --install
 ```
 
-If you use Homebrew, install GSL:
-
-```bash
-brew install gsl
-```
-
 #### Ubuntu/Debian Linux
 
-Install system build tools and GSL by running this in Terminal:
+Install system build tools by running this in Terminal:
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential libcurl4-openssl-dev libssl-dev libxml2-dev libgsl-dev
+sudo apt-get install build-essential libcurl4-openssl-dev libssl-dev libxml2-dev
 ```
 
 #### Windows
@@ -125,7 +117,7 @@ https://cran.r-project.org/bin/windows/Rtools/
 
 After installing Rtools, restart RStudio before installing packages.
 
-### Step 2: Install regular R package dependencies
+### Step 2: Install R package dependencies
 
 Run this in the RStudio Console:
 
@@ -152,27 +144,12 @@ install.packages(c(
   "RcppArmadillo",
   "RcppDist",
   "purrr",
-  "rstudioapi"
+  "rstudioapi",
   "mcclust"
 ))
 ```
 
-### Step 3: Check whether `RcppGSL` can be installed
-
-Before installing all remaining dependencies at once, test `RcppGSL` separately.
-
-Run this in the RStudio Console:
-
-```r
-install.packages("RcppGSL")
-library(RcppGSL)
-```
-
-If this works, continue to the next section.
-
-If this fails, the issue is usually that GSL or the system compiler tools are missing. Check the error message and confirm that the system setup steps above were completed for your operating system.
-
-### Step 4: Confirm package loading
+### Step 3: Confirm package loading
 
 After installation, run this in the RStudio Console:
 
@@ -198,9 +175,8 @@ required_packages <- c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
-  "RcppGSL",
   "purrr",
-  "rstudioapi"
+  "rstudioapi",
   "mcclust"
 )
 
@@ -226,6 +202,7 @@ You can check your current working directory by running:
 ```r
 getwd()
 ```
+
 If needed, set the working directory manually. For example:
 
 ```r
@@ -349,6 +326,8 @@ The app is organized to run on Windows, macOS, and Linux.
 Parallel computations use `foreach`, `doParallel`, and `parallel::makeCluster()`, which use PSOCK-style workers and are more portable than Unix-only fork-based parallelization.
 
 R-level density and survival helper functions use `matrixStats::logSumExp()` rather than the Rcpp `log_sum_exp()` function inside parallel workers to avoid external-pointer issues.
+
+The app no longer requires `RcppGSL`, which avoids operating-system-specific GSL installation issues.
 
 ## Development notes
 

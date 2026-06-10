@@ -1,20 +1,14 @@
 #include <RcppArmadillo.h>
 #include <RcppDist.h>
-#include <RcppGSL.h>
 #include <sstream>
 #include <iostream>
 #include <fstream>
 #include <omp.h>
 
-#include <gsl/gsl_math.h>
-#include <gsl/gsl_sf_gamma.h>
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_randist.h>
-#include <gsl/gsl_sf_psi.h>
 #include<trunclst.h>
 #include <limits>
+#include <cmath>
 // [[Rcpp::depends(RcppArmadillo,RcppDist)]]
-// [[Rcpp::depends(RcppGSL)]]
 // [[Rcpp::plugins(cpp17)]]
 // [[Rcpp::plugins(openmp)]]
 
@@ -23,6 +17,70 @@ using namespace arma;
 #define crossprod(x) symmatu(x.t() * x)
 #define tcrossprod(x) symmatu(x * x.t())
 #define ssq(x) dot(x,x)
+
+
+inline double gsl_pow_2(const double x) {
+  return x * x;
+}
+
+inline int GSL_MAX_INT(const int a, const int b) {
+  return (a > b) ? a : b;
+}
+
+inline double GSL_MIN_DBL(const double a, const double b) {
+  return (a < b) ? a : b;
+}
+
+
+inline double lnpoch_cpp(const double a, const double b) {
+  return R::lgammafn(a + b) - R::lgammafn(a);
+}
+
+inline arma::uword sample_categorical_cpp(const arma::vec &prob) {
+  double total = arma::accu(prob);
+
+  if (!std::isfinite(total) || total <= 0.0) {
+    return static_cast<arma::uword>(
+      std::floor(R::runif(0.0, 1.0) * prob.n_elem)
+    );
+  }
+
+  double u = R::runif(0.0, total);
+  double csum = 0.0;
+
+  for (arma::uword i = 0; i < prob.n_elem; ++i) {
+    csum += prob(i);
+    if (u <= csum) {
+      return i;
+    }
+  }
+
+  return prob.n_elem - 1;
+}
+
+inline arma::vec rdirichlet_cpp(const arma::vec &alpha) {
+  arma::vec out(alpha.n_elem);
+  double total = 0.0;
+
+  for (arma::uword i = 0; i < alpha.n_elem; ++i) {
+    double a = alpha(i);
+
+    if (!std::isfinite(a) || a <= 0.0) {
+      a = 1e-12;
+    }
+
+    out(i) = R::rgamma(a, 1.0);
+    total += out(i);
+  }
+
+  if (!std::isfinite(total) || total <= 0.0) {
+    out.fill(1.0 / static_cast<double>(alpha.n_elem));
+  } else {
+    out /= total;
+  }
+
+  return out;
+}
 
 // [[Rcpp::export]]
 double log_sum_exp(const arma::vec &x)
@@ -103,7 +161,7 @@ double post_t_dens(const double x, const  double ss_survtime,const  double survt
   
   
   /*double df_final=2.0*alpha_post;
-   double denss=gsl_sf_lnpoch(alpha_post,.5) - (M_LNPI/2 + log( sqrt(df_final)* sigma_post ) +(alpha_post+.5)* log1p( gsl_pow_2( (x-mu_post)/sigma_post )/df_final  ) );
+   double denss=lnpoch_cpp(alpha_post, 0.5) - (std::log(arma::datum::pi) / 2.0 + log( sqrt(df_final)* sigma_post ) +(alpha_post+.5)* log1p( gsl_pow_2( (x-mu_post)/sigma_post )/df_final  ) );
    Rcpp::Rcout<<"mu_post="<<mu_post<<" ss_j="<<ss_j <<  " manual dens="<<denss<<" RcppDIST dens="<<d_lst( x,  2.0*alpha_post, mu_post, sigma_post, 1)<<endl;*/
   
   return d_lst( x,  2.0*alpha_post, mu_post, sigma_post, 1);
@@ -288,10 +346,10 @@ double del_ll_alpha(const double l_alpha, const unsigned K, const arma::vec &nj_
   const double al_by_k= alpha/((double) K);
   
   vec tmp=nj_vec+ al_by_k;
-  tmp.transform( [](double val) { return ( gsl_sf_psi(val) ); } );
+  tmp.transform( [](double val) { return ( R::digamma(val) ); } );
   
   // Rcpp::Rcout<<"alpha="<<alpha<<" al_by_k="<<al_by_k<<" alpha+ accu(nj_vec)="<<alpha+ accu(nj_vec) <<endl;
-  double ret= (gsl_sf_psi(alpha) - gsl_sf_psi(alpha+ accu(nj_vec)) + (accu(tmp) -  Kn*gsl_sf_psi(al_by_k) )/ ((double) K) )*alpha
+  double ret= (R::digamma(alpha) - R::digamma(alpha+ accu(nj_vec)) + (accu(tmp) -  Kn*R::digamma(al_by_k) )/ ((double) K) )*alpha
   - (l_alpha - mu_alp)/gsl_pow_2(sig_alp) ;
   
   return ret;
@@ -353,8 +411,8 @@ void update_alpha(const unsigned K, const arma::vec &nj_vec, const double mu_alp
 // Returns: F(j,c,s) = uvec(ncat(c)) of counts at draw s
 // Build field<arma::uvec>(nmix, k, n_mc_old) from flat noccu_old
 arma::field<arma::uvec> build_noccu_field(const Rcpp::List& noccu_old,
-                                          unsigned nmix, unsigned k,
-                                          const arma::uvec& ncat) {
+                                    unsigned nmix, unsigned k,
+                                    const arma::uvec& ncat) {
   const unsigned n_mc_old = noccu_old.size();
   field<arma::uvec> F(nmix, k, n_mc_old);
   
@@ -552,14 +610,6 @@ arma::imat stage2_init_alloc_cov_only(
                (unsigned)init_ids.n_elem, (unsigned)R);
   }
   
-  // ----- RNG -----
-  const gsl_rng_type * T_rng;
-  gsl_rng * r;
-  gsl_rng_env_setup();
-  T_rng = gsl_rng_default;
-  r = gsl_rng_alloc(T_rng);
-  gsl_rng_set(r, rng_seed);
-  
   arma::imat Z_init(R, N, arma::fill::zeros);   // 0-based labels
   arma::vec  logp(K, arma::fill::zeros);
   arma::vec  pr(K,    arma::fill::zeros);
@@ -578,20 +628,17 @@ arma::imat stage2_init_alloc_cov_only(
       const double lp_max = logp.max();
       pr = arma::exp(logp - lp_max);
       const double denom = arma::accu(pr);
-      if (denom <= 0.0 || !arma::is_finite(denom)) {
+      if (denom <= 0.0 || !std::isfinite(denom)) {
         pr.fill(1.0 / double(K));   // uniform fallback if degenerate
       } else {
         pr /= denom;
       }
       
-      // sample one-hot via GSL multinomial, then argmax
-      arma::uvec one_hot(K, arma::fill::zeros);
-      gsl_ran_multinomial(r, (size_t)K, 1, pr.memptr(), one_hot.memptr());
-      Z_init(rr, i) = one_hot.index_max();   // 0-based cluster label
+      // sample cluster label from normalized probabilities
+      Z_init(rr, i) = sample_categorical_cpp(pr);   // 0-based cluster label
     }
   }
   
-  gsl_rng_free(r);
   return Z_init;
 }
 
@@ -915,14 +962,6 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
     }
   }
   
-  // GSL rng (for Dirichlet/multinomial)
-  const gsl_rng_type * T;
-  gsl_rng * r;
-  gsl_rng_env_setup();
-  T = gsl_rng_default;
-  r = gsl_rng_alloc (T);
-  gsl_rng_set(r, 500);
-  
   const arma::vec  st_original = st;
   const arma::uvec censored_indices = arma::find(nu == 0);
   
@@ -1033,7 +1072,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
                         -  std::log( nobs(j,v) + ncat(v)*alpha_vec(v) ) );
             // Rcpp::Rcout << "X part categorical: " << dens << std::endl;
           }
-          
+            
           // continuous X
           for (auto c : non_na_obs_cont(ii))
           {
@@ -1042,7 +1081,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
                                 df_x, alpha_x, mu_x, beta_x, nj_x(j,c));
             // Rcpp::Rcout << "X part continuous: " << dens << std::endl;
           }
-          
+            
           
           lp_clust = std::log(nj_val(j,s) + alpha(s)/nmix);
         }
@@ -1075,7 +1114,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
                           -  std::log( nobs(cur_j,v) - 1 + ncat(v)*alpha_vec(v) ) );
           // Rcpp::Rcout << "X part categorical: " << dens_cur << std::endl;
         }
-        
+          
         for (auto c : non_na_obs_cont(ii))
         {
           dens_cur += post_t_dens(eta_cont(ii,c),
@@ -1084,7 +1123,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
                                   df_x, alpha_x, mu_x, beta_x, nj_x(cur_j,c) - 1);
           // Rcpp::Rcout << "X part continuous: " << dens_cur << std::endl;
         }
-        
+          
         lp_cur = std::log(nj_val(cur_j,s) - 1 + alpha(s)/nmix);
       }
       log_probs(cur_j) = dens_cur + lp_cur;
@@ -1097,9 +1136,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
       
       // probs.print("take a closer look: ");
       
-      gsl_ran_multinomial(r, nmix, 1, probs.memptr(), d.memptr());
-      arma::uvec dd = arma::find(d==1, 1, "first");
-      const unsigned new_j = dd(0);
+      const unsigned new_j = static_cast<unsigned>(sample_categorical_cpp(probs));
       
       if (new_j != cur_j){
         // decrement
@@ -1122,7 +1159,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
         survtime(new_j, t)    += st(ii);
         ss_survtime(new_j, t) += st_sq;
         arma::uvec tmp_del_ii={new_j};
-        
+       
         nj_x(tmp_del_ii,non_na_obs_cont(ii))+=1;
         
         ss_j_x(tmp_del_ii,non_na_obs_cont(ii)) += eta_cont_sq(tmp_ii,non_na_obs_cont(ii));
@@ -1220,7 +1257,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
     for (unsigned s=1;s<num_cohort;++s){
       arma::vec dir_alpha_s = nj_val.col(s) + (alpha(s)/nmix);
       arma::vec out(nmix);
-      gsl_ran_dirichlet(r, nmix, dir_alpha_s.memptr(), out.memptr());
+      out = rdirichlet_cpp(dir_alpha_s);
       pi.col(s) = out;
     }
     
@@ -1228,7 +1265,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
     {
       arma::vec dir_alpha0 = nj_val.col(0) + (alpha(0)/nmix);
       arma::vec out(nmix);
-      gsl_ran_dirichlet(r, nmix, dir_alpha0.memptr(), out.memptr());
+      out = rdirichlet_cpp(dir_alpha0);
       pi.col(0) = out;
     }
     
@@ -1362,7 +1399,6 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
   
   arma::ivec MCMC_iter = {nrun, burn, thin};
   
-  gsl_rng_free(r);
   
   return Rcpp::List::create(
     Rcpp::Named("picube")                = pimat,
@@ -1440,7 +1476,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
   const unsigned n_trt  = max(trt_index) + 1;                        // # shared trts (new index space)
   const unsigned S      = max(dat_index) + 1;                        // # cohorts (0 = current)
   const unsigned n_pred = eta_pred.n_rows;
-  
+
   if(n_pred == 0){
     eta_pred.reset();
     eta_cont_pred.reset();
@@ -1458,7 +1494,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     }
   }
   // ================================================================================
-  
+
   // -------- hyper for alpha from Stage 1 (empirical) --------
   arma::vec log_alpha_hist_all = arma::log(arma::vectorise(dirichlet_alpha_mat_old));
   double mu_alp  = arma::median(log_alpha_hist_all);
@@ -1492,10 +1528,10 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
   // -------- covariate dims --------
   const unsigned k      = eta.n_cols;
   const unsigned k_cont = eta_cont.n_cols;
-  
+
   arma::mat eta_cont_sq = arma::square(eta_cont);
   const double max_st   = 5.0 * max(st);
-  
+
   // -------- handy accessors for non-NA indices --------
   field<arma::uvec> non_na_obs(n_curr), non_na_obs_cont(n_curr);
   unsigned cat_na_count=0;
@@ -1505,7 +1541,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     cat_na_count += (k - non_na_obs(i).n_elem);
   }
   bool cat_na = (cat_na_count == eta.n_rows * eta.n_cols);
-  
+
   // -------- storage (unchanged shape) --------
   const unsigned n_mc = std::floor((nrun + burn)/thin);
   arma::umat  alloc_var_mat(n_mc, n_curr);
@@ -1514,11 +1550,11 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
   arma::cube  lognormal_sig(n_mc, nmix, n_trt);
   arma::mat   dir_alpha_mat(n_mc, S);
   arma::cube  hyperparams(n_mc, 2, n_trt);
-  
+
   arma::umat  alloc_var_mat_pred(n_mc, n_pred);
   arma::cube  pimat_pred(n_mc, nmix, n_pred, arma::fill::zeros);
   arma::cube  y_pred_cube(n_mc, n_pred, n_trt);
-  
+
   // -------- running tallies for current data --------
   field<arma::uvec> inds_eq_j_all(nmix);
   field<arma::uvec> inds_eq_j_shared(nmix, n_trt);
@@ -1526,7 +1562,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
   arma::mat   nj_val_shared_curr(nmix, n_trt, fill::zeros);
   arma::mat   survtime_curr(nmix, n_trt, fill::zeros);
   arma::mat   ss_survtime_curr(nmix, n_trt, fill::zeros);
-  
+
   // cat atoms
   field<arma::uvec> noccu(nmix, k);
   for(unsigned j=0;j<nmix;++j){
@@ -1536,12 +1572,12 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     }
   }
   arma::umat nobs_curr(nmix, k, fill::zeros);
-  
+
   // cont atoms
   arma::umat nj_x_curr(nmix, k_cont, fill::zeros);
   arma::mat  sum_j_x_curr(nmix, k_cont, fill::zeros);
   arma::mat  ss_j_x_curr(nmix, k_cont, fill::zeros);
-  
+
   // initialize current tallies from initial del
   for(unsigned j=0;j<nmix;++j){
     inds_eq_j_all(j) = find(del == j);
@@ -1559,7 +1595,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       }
       // per-cohort (only s=0 exists in current block)
       nj_val_curr(j,0) = inds_eq_j_all(j).n_elem;
-      
+
       // covariates
       for(auto ii : inds_eq_j_all(j)){
         for(auto c : non_na_obs(ii)){
@@ -1574,17 +1610,13 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       }
     }
   }
-  
-  // -------- RNG for Dirichlet / Multinomial --------
-  const gsl_rng_type *T; gsl_rng *r;
-  gsl_rng_env_setup(); T = gsl_rng_default; r = gsl_rng_alloc(T); gsl_rng_set(r, 500);
-  
+
   // -------- constants for covariate priors --------
   const double df_x    = 1.0;
   const double alpha_x = k_cont + 30.0;
   const double beta_x  = 1;
   const double mu_x    = 0;
-  
+
   // -------- helper lambdas --------
   auto map_t_old = [&](unsigned t)->int {
     arma::uvec new_idx = trt_convert.col(1);
@@ -1592,7 +1624,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     if(where.is_empty()) return -1;
     return (int)trt_convert(where(0), 0); // mapped old t
   };
-  
+
   auto combine_resp = [&](unsigned j, unsigned t, unsigned i_draw,
                           double &ssC, double &sC, unsigned &nC){
     ssC = ss_survtime_curr(j,t);
@@ -1605,7 +1637,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       nC  += (unsigned) nj_val_shared_old.slice(i_draw)(j, (unsigned)t_old);
     }
   };
-  
+
   auto combine_cont = [&](unsigned j, unsigned c, unsigned i_draw,
                           double &ssC, double &sC, unsigned &nC){
     ssC = ss_j_x_curr(j,c);
@@ -1615,28 +1647,28 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     sC  += sum_j_x_old.slice(i_draw)(j,c);
     nC  += (unsigned) nj_x_old.slice(i_draw)(j,c);
   };
-  
+
   // convert noccu_old into a field
   arma::field<arma::uvec> noccu_hist = build_noccu_field(noccu_old, nmix, k, ncat);
-  
+
   // helpers now become trivial and fast:
   auto combine_cat_counts = [&](unsigned j, unsigned c, unsigned lev, unsigned i_draw)->unsigned {
     unsigned n_cur = (unsigned) noccu(j,c)(lev);       // current tallies
     unsigned n_old = (lev < noccu_hist(j,c,i_draw).n_elem) ? noccu_hist(j,c,i_draw)(lev) : 0u;
     return n_cur + n_old;
   };
-  
+
   auto combined_nobs_cat = [&](unsigned j, unsigned c, unsigned i_draw)->unsigned {
     return (unsigned)nobs_curr(j,c) + arma::accu(noccu_hist(j,c,i_draw));
   };
-  
+
   // -------- working vectors --------
   arma::vec alpha(S, fill::value(1.0));
   arma::vec dir_prec = alpha / nmix; // CURRENT cohort precision uses nmix
-  
+
   const arma::vec st_original = st;
   const arma::uvec censored_indices = find(nu == 0);
-  
+
   arma::uvec acceptance_y(n_trt, fill::zeros);
   arma::uvec acceptance_alph(S, fill::zeros);
   
@@ -1672,7 +1704,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
           double df_post = df0 + (njt - 1);
           double alpha_post = a0 + ( (double)njt - 1.0 )/2.0;
           double tmp = ((njt-1)*df0)/df_post;
-          
+
           for(auto ii: inds_eq_j_shared(j,t)){
             if(!nu(ii)){
               double ss_j=0.0, s_j=0.0; unsigned n_j=0;
@@ -1681,12 +1713,12 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
               ss_j = ss_survtime_curr(j,t) - st2;
               s_j  = survtime_curr(j,t)     - st(ii);
               n_j  = njt - 1;
-              
+
               double mean_j = (n_j ? s_j/n_j : 0.0);
               double mu_post = (df0*mu0_t_cur + s_j)/df_post;
               double beta_post = beta0_t_cur + (ss_j - n_j*mean_j*mean_j + tmp*(mean_j - mu0_t_cur)*(mean_j - mu0_t_cur))/2.0;
               double sigma_post = std::sqrt( beta_post * (df_post+1.0)/(df_post*alpha_post) );
-              
+
               st(ii) = r_trunclst(2*alpha_post, mu_post, sigma_post, st_original(ii), std::numeric_limits<double>::max());
               st(ii) = std::min(st(ii), max_st);
               // restore
@@ -1699,7 +1731,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     }
     
     // Rcpp::Rcout << "Censored observations augmented!" << std::endl;
-    
+
     // ---- 2) update allocations (RESTRICT to historically-occupied clusters) ----
     // identify allowed set for this draw i
     if ((unsigned)i >= M_hist) Rcpp::stop("Historical arrays shorter than (nrun+burn): i=%d >= M_hist=%u", i, M_hist);
@@ -1715,7 +1747,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       const double beta0_t_cur = std::exp(params_t(t, 1));
       
       arma::vec log_probs(nmix, fill::value(-std::numeric_limits<double>::infinity()));
-      
+
       // empty-predictive pieces for a brand-new cluster (combined empty)
       double log_pdf_empty_y  = surv_fn_lognorm(st_original(ii), nu(ii), 0.0, 0.0, df0, a0, mu0_t_cur, beta0_t_cur, 0);
       double log_pdf_empty_xc = 0.0;
@@ -1735,11 +1767,11 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       for(auto j : A){
         // cluster prior mass (current cohort only)
         double cluster_prob = std::log( (double)nj_val_curr(j,0) + (j==j_cur ? -1.0 : 0.0) + alpha(0)/nmix );
-        
+
         // outcome likelihood using COMBINED stats
         double ssC, sC; unsigned nC;
         combine_resp(j, t, (unsigned)i, ssC, sC, nC);
-        
+
         if(j==j_cur){
           if(nj_val_shared_curr(j,t) > 0){
             ssC -= st_sq;
@@ -1747,11 +1779,11 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             nC  -= 1;
           }
         }
-        
+
         double log_like_y = (nC==0)
           ? log_pdf_empty_y
-        : surv_fn_lognorm(st_original(ii), nu(ii), ssC, sC, df0, a0, mu0_t_cur, beta0_t_cur, nC);
-        
+          : surv_fn_lognorm(st_original(ii), nu(ii), ssC, sC, df0, a0, mu0_t_cur, beta0_t_cur, nC);
+
         // categorical covariates
         double log_like_xcat = 0.0;
         for(auto c: non_na_obs(ii)){
@@ -1762,10 +1794,10 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             log_like_xcat += std::log( 1.0 / ( (double) ncat(c) ) );
           }else{
             log_like_xcat += ( std::log( (double)nlev + 1.0 )
-                                 - std::log( (double)nobsC + (double)ncat(c) ) );
+                               - std::log( (double)nobsC + (double)ncat(c) ) );
           }
         }
-        
+
         // continuous covariates
         double log_like_xcont = 0.0;
         for(auto c: non_na_obs_cont(ii)){
@@ -1782,7 +1814,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             log_like_xcont += post_t_dens(eta_cont(ii,c), ssXC, sXC, df_x, alpha_x, mu_x, beta_x, nXC);
           }
         }
-        
+
         log_probs(j) = cluster_prob + log_like_y + log_like_xcat + log_like_xcont;
       }
       
@@ -1796,10 +1828,8 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       // probs.print("probability: ");
       
       // sample new label over full nmix (disallowed remain prob=0)
-      arma::uvec d(nmix, fill::zeros);
-      gsl_ran_multinomial(r, nmix, 1, probs.begin(), d.begin());
-      unsigned j_new = (unsigned) d.index_max();
-      
+      unsigned j_new = static_cast<unsigned>(sample_categorical_cpp(probs));
+
       if(j_new != j_cur){
         // update tallies (current) — remove from old
         --nj_val_curr(j_cur,0);
@@ -1815,7 +1845,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
           sum_j_x_curr(j_cur,c)  -= eta_cont(ii,c);
           ss_j_x_curr(j_cur,c)   -= eta_cont_sq(ii,c);
         }
-        
+
         // add to new
         ++nj_val_curr(j_new,0);
         ++nj_val_shared_curr(j_new,t);
@@ -1848,14 +1878,14 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
         }
         inds_eq_j_all(j) = allj;
       }
-      
+
       // (B) per-treatment membership vs nj_val_shared_curr
       for (unsigned j = 0; j < nmix; ++j) {
         arma::uvec allj = inds_eq_j_all(j);
         for (unsigned t = 0; t < n_trt; ++t) {
           arma::uvec tidx = arma::find( trt_index.head(n_curr) == t );
           arma::uvec didx = arma::intersect(tidx, allj);
-          
+
           if (didx.n_elem != (unsigned)nj_val_shared_curr(j,t)) {
             Rcpp::Rcout << "[B] j=" << j << " t=" << t
                         << " | size(intersect(trt=t,del==j))=" << didx.n_elem
@@ -1863,7 +1893,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             Rcpp::stop("Stage2 check: inds_eq_j_shared vs nj_val_shared_curr mismatch");
           }
           inds_eq_j_shared(j,t) = didx;
-          
+
           // (C) response tallies (current only)
           double s_sum = 0.0, ss_sum = 0.0;
           for (auto ii : didx) { s_sum += st(ii); ss_sum += st(ii)*st(ii); }
@@ -1882,7 +1912,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
         for (unsigned v = 0; v < k; ++v) {
           std::vector<unsigned> cnt( ncat(v), 0U );
           unsigned nobs_re = 0U;
-          
+
           for (auto ii : idx) {
             double val = eta(ii,v);
             if (std::isfinite(val)) {
@@ -1890,7 +1920,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
               if (lev < cnt.size()) { ++cnt[lev]; ++nobs_re; }
             }
           }
-          
+
           if ((unsigned)nobs_curr(j,v) != nobs_re) {
             Rcpp::Rcout << "[D] cat nobs mismatch j=" << j << " v=" << v
                         << " | have=" << (unsigned)nobs_curr(j,v)
@@ -1917,7 +1947,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             double x = eta_cont(ii,c);
             if (std::isfinite(x)) { ++n_re; s_re += x; ss_re += x*x; }
           }
-          
+
           if ((unsigned)nj_x_curr(j,c) != n_re ||
               std::fabs(s_re  - sum_j_x_curr(j,c)) > 1e-8 ||
               std::fabs(ss_re - ss_j_x_curr(j,c))  > 1e-8) {
@@ -1963,7 +1993,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       
       // Sample Dirichlet on A
       arma::vec tmpA(A_size);
-      gsl_ran_dirichlet(r, A_size, alpha_A.begin(), tmpA.begin());
+      tmpA = rdirichlet_cpp(alpha_A);
       
       // Scatter back into full-length vector (zeros elsewhere)
       arma::vec tmp(nmix, arma::fill::zeros);
@@ -2041,7 +2071,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       arma::vec acc_alph = arma::conv_to<arma::vec>::from(acceptance_alph) / denom;
       acc_alph.t().print("Dataset Acceptance (alpha):");
     }
-    
+
     // ---- 8) thinning storage ----
     unsigned remainder = (i+1);
     unsigned q = (unsigned)std::floor(remainder/thin);
@@ -2058,7 +2088,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
         hyperparams(q-1, 1, t) = std::exp(params_t(t, 1));        // β0,t  (stored on natural scale like Stage 1)
       }
     }
-    
+
     // ---- 9) prediction branch (RESTRICT to historical A for this draw) ----
     if(n_pred){
       field<arma::uvec> non_na_obs_pred(n_pred), non_na_obs_cont_pred(n_pred);
@@ -2071,15 +2101,15 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       }
       arma::uvec del_pred(n_pred);
       arma::mat  y_pred(n_pred, n_trt, fill::zeros);
-      
+
       for(unsigned p=0;p<n_pred;++p){
         arma::vec logp(nmix, fill::value(-std::numeric_limits<double>::infinity()));
         arma::vec cluster_log_prior = arma::log(nj_val_curr.col(0) + alpha(0)/nmix);
-        
+
         // only over allowed set A for draw i
         for(auto j : A){
           double lxc=0.0, lcc=0.0;
-          
+
           for(auto c: non_na_obs_cont_pred(p)){
             double ssXC, sXC; unsigned nXC;
             combine_cont(j, c, (unsigned)i, ssXC, sXC, nXC);
@@ -2093,18 +2123,16 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
             if(nobsC==0) lxc += std::log(1.0 / (double)ncat(c));
             else         lxc += ( std::log((double)nlev + 1.0) - std::log((double)nobsC + (double)ncat(c)) );
           }
-          
+
           logp(j) = cluster_log_prior(j) + lcc + lxc;
         }
-        
+
         double logZ = log_sum_exp(logp);
         arma::vec pr = arma::exp(logp - logZ);
         pr_mat.col(p) = pr;
-        arma::uvec d_pred(nmix, fill::zeros);
-        gsl_ran_multinomial(r, nmix, 1, pr.begin(), d_pred.begin());
-        unsigned jstar = (unsigned)d_pred.index_max();
+        unsigned jstar = static_cast<unsigned>(sample_categorical_cpp(pr));
         del_pred(p) = jstar;
-        
+
         for(unsigned t=0;t<n_trt;++t){
           double ssC, sC; unsigned nC;
           combine_resp(jstar, t, (unsigned)i, ssC, sC, nC);
@@ -2114,7 +2142,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
           y_pred(p,t) = R::rnorm(v(0), std::sqrt(v(1)));
         }
       }
-      
+
       unsigned remp=(i+1), qp=(unsigned)std::floor(remp/thin); remp-=qp*thin;
       if(remp==0){
         alloc_var_mat_pred.row(qp-1) = del_pred.t();
@@ -2132,9 +2160,8 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     arma::conv_to<arma::vec>::from(acceptance_alph) / ((double)(nrun+burn));
   acceptance_all.subvec(S, S + n_trt - 1) =
     arma::conv_to<arma::vec>::from(acceptance_y) / ((double)(nrun+burn));
-  
-  gsl_rng_free(r);
-  
+
+
   if(n_pred){
     return Rcpp::List::create(
       Rcpp::Named("picube")                 = pimat,
@@ -2161,3 +2188,1291 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
     );
   }
 }
+
+// [[Rcpp::export]]
+Rcpp::List common_atoms_cat_lognormal_shared(
+    const arma::uvec &dat_index,
+    const arma::uvec &trt_index,
+    arma::vec &st, arma::uvec &nu,
+    arma::uvec &del,
+    arma::umat &eta,                                         
+    arma::mat &eta_cont,
+    Rcpp::List non_na_obs1,
+    Rcpp::List non_na_obs1_cont,
+    arma::umat &eta_pred,                                    
+    arma::mat &eta_cont_pred,
+    Rcpp::List non_na_obs1_pred,
+    Rcpp::List non_na_obs1_cont_pred,
+    const unsigned nmix, arma::uvec ncat,
+    const double a0, const double df0,
+    const arma::vec &mu_m_t,                                 // [NEW]
+    const arma::vec &mu_v_t,                                 // [NEW]
+    const arma::vec &b_m_t,                                  // [NEW]  (log-beta prior mean)
+    const arma::vec &b_v_t,                                  // [NEW]  (log-beta prior var)
+    const arma::vec &del_range_lognorm_ref,                  // [NEW] for t==0
+    const unsigned nleapfrog_lognorm_ref,                    // [NEW] for t==0
+    const arma::vec &del_range_lognorm_oth,                  // [NEW] for t>0
+    const unsigned nleapfrog_lognorm_oth,                    // [NEW] for t>0
+    const arma::vec &alpha_hyper,
+    const arma::vec &del_range_alp1,
+    const unsigned nleapfrog_alp1,
+    const arma::vec &del_range_alp2,
+    const unsigned nleapfrog_alp2,
+    const int nrun, const int burn,
+    const int thin
+) {
+  const unsigned n = trt_index.n_elem;
+  const unsigned n_trt = max(trt_index) + 1;
+  const unsigned num_cohort = max(dat_index) + 1;
+  
+  const unsigned n_pred = eta_pred.n_rows;
+  if(n_pred == 0) {
+    eta_pred.reset();
+    eta_cont_pred.reset();
+  }
+  
+  // ===== Dirichlet hyper (unchanged) =====
+  arma::uvec acceptance_y(n_trt, fill::zeros);
+  arma::uvec acceptance_alph(num_cohort, arma::fill::zeros);
+  double mu_alp, sig_alp;
+  sig_alp = log1p(alpha_hyper(1) / gsl_pow_2(alpha_hyper(0)));
+  mu_alp  = log(alpha_hyper(0)) - sig_alp/2;
+  sig_alp = std::sqrt(sig_alp);
+  
+  // ====== Per-treatment hyperparameter state ======
+  // current_params_t(t): [ mu0_t , log_beta0_t ]
+  arma::mat current_params_t(2, n_trt, arma::fill::zeros);   // [NEW] columns are treatments
+  // initialize from supplied hyperprior centers
+  for (unsigned t = 0; t < n_trt; ++t) {                     // [NEW]
+    current_params_t(0, t) = mu_m_t(t);                      // start at prior mean for mu
+    current_params_t(1, t) = b_m_t(t);                       // start at prior mean for log(beta)
+  }
+  
+  // number of categorical and continuous variables respectively
+  const unsigned k = eta.n_cols;
+  const unsigned k_cont = eta_cont.n_cols;
+  
+  arma::mat eta_cont_sq = arma::square(eta_cont);
+  const double max_st = 5 * max(st);
+  
+  // ===== bring non-missing indices =====
+  arma::field<arma::uvec> non_na_obs(n), non_na_obs_cont(n);
+  unsigned cat_na_count=0;
+  for(unsigned i=0;i<n;++i) {
+    non_na_obs(i)      = Rcpp::as<arma::uvec>(non_na_obs1[i]);
+    cat_na_count      += (k - (non_na_obs(i)).n_elem);
+    non_na_obs_cont(i) = Rcpp::as<arma::uvec>(non_na_obs1_cont[i]);
+  }
+  bool cat_na = (cat_na_count == (eta.n_rows * eta.n_cols)); // TRUE if no cat covariates
+  
+  // ===== MCMC storage =====
+  unsigned n_mc = std::floor((nrun + burn) / thin);
+  arma::umat alloc_var_mat(n_mc, n);
+  arma::umat alloc_var_mat_pred(n_mc, n_pred);
+  arma::cube y_pred_cube(n_mc, n_pred, n_trt);
+  
+  arma::field<arma::mat> weightsSyn(num_cohort - 1);
+  for(unsigned s = 0; s < (num_cohort - 1); ++s) {
+    arma::uvec tmp = arma::find(dat_index == (s + 1));
+    weightsSyn(s).set_size(n_mc, tmp.n_elem);
+  }
+  
+  arma::cube pimat(n_mc, nmix, num_cohort);
+  arma::cube lognormal_mu(n_mc, nmix, n_trt);
+  arma::cube lognormal_sig(n_mc, nmix, n_trt);
+  
+  arma::mat dir_alpha_mat(n_mc, num_cohort);
+  
+  // ====== Hyperparams storage becomes a cube ======
+  arma::cube hyperparams_cube(n_mc, 2, n_trt, arma::fill::zeros);  // [NEW] (mu0_t, log_beta0_t) per t
+  
+  arma::mat unifmat(n_mc, n);
+  
+  // --- initialize loop objects --- //
+  arma::uvec d(nmix);
+  arma::vec probs(nmix), log_probs(nmix);
+  arma::vec alpha_vec(k, arma::fill::value(1.0));
+  
+  // categorical atoms
+  arma::field<arma::uvec> noccu(nmix, k);
+  if(!cat_na) {
+    for (unsigned i = 0; i < nmix; ++i) {
+      for (unsigned j = 0; j < k; ++j) {
+        if (ncat(j) < 2) {
+          Rcpp::Rcout << "j= " << j << " ncat(j) < 2" << std::endl;
+          Rcpp::stop("");
+        }
+        noccu(i, j).set_size(ncat(j));
+        noccu(i, j).zeros();
+      }
+    }
+  }
+  
+  // continuous tallies
+  arma::umat nj_x(nmix, k_cont, arma::fill::zeros);
+  arma::mat  sum_j_x(nmix, k_cont, arma::fill::zeros),
+  ss_j_x(nmix, k_cont, arma::fill::zeros);
+  
+  arma::field<arma::umat> inds_eq_j_shared(nmix, n_trt);
+  arma::field<arma::umat> inds_eq_j(nmix, num_cohort);
+  arma::field<arma::uvec> inds_eq_j_all(nmix);
+  arma::vec nj_val_all(nmix);
+  
+  Rcpp::Rcout << "cluster occupancy finding starts!!" << std::endl;
+  for (unsigned j = 0; j < nmix; ++j) {
+    inds_eq_j_all(j) = arma::find(del == j);
+    nj_val_all(j) = inds_eq_j_all(j).n_elem;
+    
+    if(nj_val_all(j)) {
+      Rcpp::Rcout << "n_inds at j=" << j << " is " << inds_eq_j_all(j).n_elem << std::endl;
+    }
+    for (auto it1 : inds_eq_j_all(j)) {
+      for (auto it2 : non_na_obs(it1)) {
+        ++noccu(j,it2)(eta(it1,it2));                         // [CHG] eta is imat (same access)
+      }
+      for (auto it3 : non_na_obs_cont(it1)) {
+        ++nj_x(j,it3);
+        sum_j_x(j, it3) += eta_cont(it1, it3);
+        ss_j_x(j, it3)  += eta_cont_sq(it1, it3);
+      }
+    }
+  }
+  
+  arma::mat nj_val(nmix, num_cohort, arma::fill::zeros);
+  arma::mat nj_val_shared(nmix, n_trt, arma::fill::zeros);
+  
+  for (unsigned j = 0; j < nmix; ++j) {
+    for (unsigned s = 0; s < num_cohort; ++s) {
+      arma::uvec tmp = arma::find(dat_index == s);
+      arma::uvec tmp1= arma::find(del == j);
+      inds_eq_j(j, s) = arma::intersect(tmp, tmp1);
+      nj_val(j, s)    = inds_eq_j(j, s).n_elem;
+    }
+  }
+  
+  // predictive prior for cont covs (unchanged)
+  const double df_x = 1.0, alpha_x = k_cont + 30.0;
+  const double beta_x = 1;
+  const double mu_x   = 0;
+  
+  // responses split by t
+  arma::mat survtime(nmix, n_trt, arma::fill::zeros);
+  arma::mat ss_survtime(nmix, n_trt, arma::fill::zeros);
+  for (unsigned j = 0; j < nmix; ++j) {
+    for (unsigned t = 0; t < n_trt; ++t) {
+      arma::uvec tmp = arma::find(trt_index == t);
+      arma::uvec tmp1= arma::find(del == j);
+      inds_eq_j_shared(j,t) = arma::intersect(tmp, tmp1);
+      nj_val_shared(j,t) = inds_eq_j_shared(j,t).n_elem;
+      survtime(j,t)      = arma::sum(st(inds_eq_j_shared(j,t)));
+      ss_survtime(j,t)   = ssq(st(inds_eq_j_shared(j,t)));
+    }
+  }
+  
+  if(sum_j_x.has_nan() || ss_j_x.has_nan())
+    Rcpp::stop("sum_j_x.has_nan()|| ss_j_x.has_nan() ");
+  
+  const arma::vec st_original = st;
+  const arma::uvec censored_indices = arma::find(nu == 0);
+  
+  // number of non-NA per cat var per cluster
+  arma::umat nobs(nmix, k, arma::fill::zeros);
+  if(!cat_na) {
+    for(unsigned i = 0; i < nmix; ++i)
+      for(unsigned j = 0; j < k; ++j)
+        nobs(i,j) = arma::sum(noccu(i,j));
+  }
+  
+  arma::field<arma::uvec> non_empty_clusters(num_cohort);
+  for (unsigned s = 0; s < num_cohort; ++s)
+    non_empty_clusters(s) = arma::find(nj_val.col(s));
+  
+  arma::vec tmpp = nj_val_all - nj_val.col(0);
+  arma::uvec occu_hist = arma::find(tmpp);
+  
+  unsigned nmix1 = occu_hist.n_elem;
+  arma::vec alpha(num_cohort, arma::fill::value(1.0));
+  arma::vec dir_prec(num_cohort, arma::fill::ones);
+  dir_prec(0) = alpha(0)/nmix1;
+  dir_prec.subvec(1, num_cohort - 1) = alpha.subvec(1, num_cohort - 1)/nmix;
+  
+  arma::vec prob_empty = arma::log(dir_prec);
+  double df_post, alpha_post, tmp, ss_j, survtime_j, mean_j, mu_post, beta_post, sigma_post;
+  
+  arma::vec unif(n);
+  
+  // ===================== MCMC =====================
+  for (int i = 0; i < (nrun + burn); ++i) {
+    
+    // ---- Augment censored observations ----
+    for (unsigned j = 0; j < nmix; ++j) {
+      for (unsigned t = 0; t < n_trt; ++t) {
+        if (nj_val_shared(j,t)) {
+          // [CHG] pull per-t hyperparams
+          const double mu0_t_cur   = current_params_t(0, t);               // [CHG]
+          const double beta0_t_cur = std::exp(current_params_t(1, t));     // [CHG]
+          
+          df_post   = df0 + nj_val_shared(j, t) - 1;
+          alpha_post= a0 + ( (double) nj_val_shared(j,t) - 1 ) / 2.0;
+          tmp       = ( (nj_val_shared(j,t)-1) * df0 ) / df_post;
+          
+          for (auto jj : inds_eq_j_shared(j,t)) {
+            if (!nu(jj)) {
+              if (nj_val_shared(j,t) > 1) {
+                ss_j      = ss_survtime(j,t) - gsl_pow_2(st(jj));
+                survtime_j= survtime(j,t)    - st(jj);
+                mean_j    = survtime_j / (nj_val_shared(j,t) - 1);
+              } else {
+                ss_j = survtime_j = mean_j = 0.0;
+              }
+              mu_post   = (df0 * mu0_t_cur + survtime_j) / df_post;               // [CHG]
+              beta_post = beta0_t_cur + ( ss_j
+                                            - ((double)nj_val_shared(j,t)-1) * gsl_pow_2(mean_j)
+                                            + tmp * gsl_pow_2(mean_j - mu0_t_cur) ) / 2.0;       // [CHG]
+                                            sigma_post= std::sqrt( beta_post * (df_post + 1) / (df_post * alpha_post) );
+                                            
+                                            st(jj)    = r_trunclst(2*alpha_post,  mu_post, sigma_post,
+                                               st_original(jj), std::numeric_limits<double>::max());
+                                            st(jj)    = GSL_MIN_DBL(st(jj), max_st);
+                                            
+                                            ss_survtime(j,t) = ss_j + gsl_pow_2(st(jj));
+                                            survtime(j,t)    = survtime_j + st(jj);
+            }
+          }
+        }
+      }
+    }
+    
+    /***** UPDATE ALLOCATION VARIABLES (unchanged except per-t calls inside surv_fn) *****/
+    arma::vec probs1(nmix1, arma::fill::zeros);
+    long double log_DEN;
+    for (unsigned jj = 0; jj < n; ++jj) {
+      double dens,cluster_prob, pdf_empty, st_sq = gsl_pow_2(st(jj));
+      log_probs.fill(arma::datum::log_min);
+      
+      unsigned current_ind = del(jj);
+      const unsigned s = dat_index(jj);
+      const unsigned t = trt_index(jj);
+      
+      // [CHG] pull per-t hyper
+      const double mu0_t_cur   = current_params_t(0, t);           // [CHG]
+      const double beta0_t_cur = std::exp(current_params_t(1, t)); // [CHG]
+      
+      if (s == 0) {
+        // current cohort...
+        for (unsigned j = 0; j < nmix; ++j) {
+          if (tmpp(j)) {
+            if (j != current_ind) {
+              dens = surv_fn_lognorm(st_original(jj),  nu(jj),
+                                     ss_survtime(j,t), survtime(j,t),
+                                     df0, a0, mu0_t_cur, beta0_t_cur,      // [CHG]
+                                     nj_val_shared(j,t));
+              for (auto it : non_na_obs(jj)) {
+                dens += ( std::log( noccu(j,it)(eta(jj,it)) +  alpha_vec(it))
+                            - std::log( nobs(j,it) + ncat(it)*alpha_vec(it) ) );
+              }
+              for (auto it : non_na_obs_cont(jj)) {
+                dens += post_t_dens(eta_cont(jj,it), ss_j_x(j,it), sum_j_x(j,it),
+                                    df_x, alpha_x, mu_x, beta_x, nj_x(j,it));
+              }
+              cluster_prob = std::log(nj_val(j, s) + dir_prec(s));
+              log_probs(j) = dens + cluster_prob;
+            }
+          }
+        }
+        // self cluster
+        {
+          unsigned j = current_ind;
+          if (nj_val_all(j) == 0 || tmpp(j) == 0) {
+            Rcpp::Rcout << "This happened at i = " << i << std::endl;
+            (arma::conv_to<arma::umat>::from(nj_val)).print("current cluster occupancies: ");
+            (arma::conv_to<arma::umat>::from(nj_val_all)).print("current cluster occupancies across datasets: ");
+            (arma::conv_to<arma::umat>::from(tmpp)).print("current cluster occupancies without treatment arm: ");
+            Rcpp::stop("nj_val(current_ind)=0 || tmpp(current_ind)=0 jj in G_1");
+          }
+          dens = surv_fn_lognorm(st_original(jj),  nu(jj),
+                                 ss_survtime(j,t) - st_sq,  survtime(j,t) - st(jj),
+                                 df0, a0, mu0_t_cur, beta0_t_cur,                 // [CHG]
+                                 nj_val_shared(j,t) - 1);
+          for (auto it : non_na_obs(jj)) {
+            dens += ( std::log( noccu(j,it)(eta(jj,it)) - 1 + alpha_vec(it) )
+                        - std::log( ncat(it)*alpha_vec(it) + nobs(j,it) - 1 ) );
+          }
+          for (auto it : non_na_obs_cont(jj)) {
+            dens += post_t_dens(eta_cont(jj,it),
+                                ss_j_x(j,it) - eta_cont_sq(jj,it),
+                                sum_j_x(j,it) - eta_cont(jj,it),
+                                df_x, alpha_x, mu_x, beta_x, nj_x(j,it) - 1);
+          }
+          cluster_prob = std::log(nj_val(j, s) - 1 + dir_prec(s));
+          log_probs(j) = dens + cluster_prob;
+          arma::vec log_probs1 = log_probs(occu_hist);
+          log_DEN = log_sum_exp(log_probs1);
+          probs1 = arma::exp(log_probs1 - log_DEN);
+        }
+      } else {
+        // RWD cohorts...
+        unsigned j = current_ind;
+        if(nj_val(j,0) && tmpp(j) == 1) {
+          log_probs.fill(arma::datum::log_min);
+          log_probs(j) = arma::datum::log_max;
+        } else if(nj_val(j,0) && !tmpp(j)) {
+          Rcpp::stop("infeasible case for RWD cluster");
+        } else {
+          pdf_empty = surv_fn_lognorm(st_original(jj), nu(jj),
+                                      0.0, 0.0, df0, a0, mu0_t_cur, beta0_t_cur, 0);  // [CHG]
+          for (auto it : non_na_obs_cont(jj)) {
+            pdf_empty += post_t_dens(eta_cont(jj,it), 0.0, 0.0,
+                                     df_x, alpha_x, mu_x, beta_x, 0);
+          }
+          for (unsigned j2 = 0; j2 < nmix; ++j2) {
+            if (j2 != current_ind) {
+              if (!nj_val_all(j2)) {
+                dens = pdf_empty;
+                cluster_prob = prob_empty(s);
+              } else {
+                dens = surv_fn_lognorm(st_original(jj), nu(jj),
+                                       ss_survtime(j2,t),  survtime(j2,t),
+                                       df0, a0, mu0_t_cur, beta0_t_cur,             // [CHG]
+                                       nj_val_shared(j2,t));
+                for (auto it : non_na_obs(jj)) {
+                  dens += ( std::log( noccu(j2,it)(eta(jj,it)) + alpha_vec(it) )
+                              - std::log( ncat(it)*alpha_vec(it) + nobs(j2,it) ) );
+                }
+                for (auto it : non_na_obs_cont(jj)) {
+                  dens += post_t_dens(eta_cont(jj,it), ss_j_x(j2,it), sum_j_x(j2,it),
+                                      df_x, alpha_x, mu_x, beta_x, nj_x(j2,it));
+                }
+                cluster_prob = std::log(nj_val(j2, s) + dir_prec(s));
+              }
+              log_probs(j2) = dens + cluster_prob;
+            }
+          }
+          if (nj_val_all(current_ind) == 1) {
+            dens = pdf_empty;
+            cluster_prob = prob_empty(s);
+          } else {
+            unsigned j2 = current_ind;
+            dens = surv_fn_lognorm(st_original(jj), nu(jj),
+                                   ss_survtime(j2,t) - st_sq,  survtime(j2,t) - st(jj),
+                                   df0, a0, mu0_t_cur, beta0_t_cur,                 // [CHG]
+                                   nj_val_shared(j2,t) - 1);
+            for (auto it : non_na_obs(jj)) {
+              dens += ( std::log( noccu(j2,it)(eta(jj,it)) - 1 + alpha_vec(it) )
+                          - std::log( ncat(it)*alpha_vec(it) + nobs(j2,it) - 1 ) );
+            }
+            for (auto it : non_na_obs_cont(jj)) {
+              dens += post_t_dens(eta_cont(jj,it),
+                                  ss_j_x(j2,it) - eta_cont_sq(jj,it),
+                                  sum_j_x(j2,it) - eta_cont(jj,it),
+                                  df_x, alpha_x, mu_x, beta_x, nj_x(j2,it) - 1);
+            }
+            cluster_prob = std::log(nj_val(j2, s) - 1 + dir_prec(s));
+          }
+          log_probs(current_ind) = dens + cluster_prob;
+        }
+      }
+      
+      if (s == 0) {
+        probs.zeros();
+        probs(occu_hist) = probs1;
+      } else {
+        log_DEN = log_sum_exp(log_probs);
+        probs = arma::exp(log_probs - log_DEN);
+      }
+      if (arma::sum(probs) == 0) Rcpp::stop("sum(probs) == 0)");
+      
+      del(jj) = sample_categorical_cpp(probs);
+      
+      // update occupancies (unchanged) ...
+      if (del(jj) != current_ind) {
+        const double st_sq = gsl_pow_2(st(jj));
+        --nj_val(current_ind, s);
+        ++nj_val(del(jj), s);
+        --nj_val_shared(current_ind, t);
+        ++nj_val_shared(del(jj), t);
+        --nj_val_all(current_ind);
+        ++nj_val_all(del(jj));
+        
+        survtime(current_ind, t) -= st(jj);
+        ss_survtime(current_ind, t) -= st_sq;
+        
+        survtime(del(jj), t) += st(jj);
+        ss_survtime(del(jj), t) += st_sq;
+        
+        for (auto it : non_na_obs(jj)) {
+          --noccu(current_ind, it)(eta(jj,it));
+          ++noccu(del(jj), it)(eta(jj,it));
+          --nobs(current_ind, it);
+          ++nobs(del(jj), it);
+        }
+        
+        arma::uvec tmp_current_ind = {current_ind}, tmp_del_jj = {del(jj)}, tmp_jj = {jj};
+        nj_x(tmp_current_ind, non_na_obs_cont(jj)) -= 1;
+        nj_x(tmp_del_jj,      non_na_obs_cont(jj)) += 1;
+        
+        ss_j_x(tmp_current_ind, non_na_obs_cont(jj)) -= eta_cont_sq(tmp_jj, non_na_obs_cont(jj));
+        ss_j_x(tmp_del_jj,      non_na_obs_cont(jj)) += eta_cont_sq(tmp_jj, non_na_obs_cont(jj));
+        
+        sum_j_x(tmp_current_ind, non_na_obs_cont(jj)) -= eta_cont(tmp_jj, non_na_obs_cont(jj));
+        sum_j_x(tmp_del_jj,      non_na_obs_cont(jj)) += eta_cont(tmp_jj, non_na_obs_cont(jj));
+      }
+      tmpp = nj_val_all - nj_val.col(0);
+    }
+    
+    for (unsigned s = 0; s < num_cohort; ++s)
+      non_empty_clusters(s) = arma::find(nj_val.col(s));
+    
+    occu_hist = arma::find(tmpp);
+    nmix1 = occu_hist.n_elem;
+    dir_prec(0) = alpha(0) / nmix1;
+    
+    /*** UPDATE MIXTURE PROBABILITY ***/
+    arma::mat pi(nmix, num_cohort);
+    pi.col(0).zeros();
+    arma::mat mu(nmix, n_trt, arma::fill::zeros),
+    sig(nmix, n_trt, arma::fill::zeros);
+    
+    // sample cluster parameters
+    for (unsigned j = 0; j < nmix; ++j) {
+      if (nj_val_all(j)) inds_eq_j_all(j) = arma::find(del == j); else inds_eq_j_all(j).reset();
+      if (inds_eq_j_all(j).n_elem != nj_val_all(j)) {
+        Rcpp::Rcout << "inds_eq_j_all mismatch\n"; Rcpp::stop("Occupancy mismatch!!!");
+      }
+      for (unsigned s = 0; s < num_cohort; ++s) {
+        if (nj_val(j,s)) {
+          arma::uvec tmp = arma::find(dat_index == s);
+          arma::uvec tmp1= arma::find(del == j);
+          inds_eq_j(j,s) = arma::intersect(tmp, tmp1);
+        } else {
+          inds_eq_j(j,s).reset();
+        }
+        if (inds_eq_j(j,s).n_elem != nj_val(j,s)) {
+          Rcpp::Rcout << "inds_eq_j(j,s) mismatch\n"; Rcpp::stop("Occupancy mismatch!!!");
+        }
+      }
+      for (unsigned t = 0; t < n_trt; ++t) {
+        if (nj_val_shared(j,t)) {
+          arma::uvec tmp = arma::find(trt_index == t);
+          arma::uvec tmp1= arma::find(del == j);
+          inds_eq_j_shared(j,t) = arma::intersect(tmp, tmp1);
+        } else {
+          inds_eq_j_shared(j,t).reset();
+        }
+        if (inds_eq_j_shared(j,t).n_elem != nj_val_shared(j,t)) {
+          Rcpp::Rcout << "inds_eq_j_shared(j,t) mismatch\n"; Rcpp::stop("Occupancy mismatch!!!");
+        }
+        
+        // [CHG] per-t hyper in param simulation
+        const double mu0_t_cur   = current_params_t(0, t);
+        const double beta0_t_cur = std::exp(current_params_t(1, t));
+        arma::vec tmpvec = sim_lognorm_params(ss_survtime(j,t), survtime(j,t),
+                                              df0, a0, mu0_t_cur, beta0_t_cur, nj_val_shared(j,t)); // [CHG]
+        mu(j,t)  = tmpvec(0);
+        sig(j,t) = tmpvec(1);
+      }
+    }
+    
+    // mixture weights as before...
+    for (unsigned s = 1; s < num_cohort; ++s) {
+      arma::vec dir_alpha = nj_val.col(s) + dir_prec(s);
+      arma::vec tmppi(nmix);
+      tmppi = rdirichlet_cpp(dir_alpha);
+      pi.col(s) = tmppi;
+    }
+    {
+      arma::uvec ind0 = {0};
+      arma::vec dir_alpha1 = nj_val(occu_hist, ind0) + dir_prec(0);
+      arma::vec pi1_tmp(nmix1);
+      pi1_tmp = rdirichlet_cpp(dir_alpha1);
+      pi.col(0).zeros();
+      pi(occu_hist, ind0) = pi1_tmp;
+    }
+    
+    arma::field<arma::vec> wght_xSyn_new(num_cohort - 1);
+    arma::vec dir_alpha(nmix);
+    {
+      arma::uvec ind0 = {0};
+      arma::vec dir_alpha1 = nj_val(occu_hist, ind0) + dir_prec(0);
+      dir_alpha.zeros(); dir_alpha(occu_hist) = dir_alpha1;
+    }
+    for (unsigned s = 1; s < num_cohort; ++s) {
+      arma::uvec inds = {s};
+      arma::vec mean_pi1(nmix, arma::fill::zeros);
+      arma::vec wghtSyn(nmix, arma::fill::zeros);
+      mean_pi1(non_empty_clusters(s)) = arma::normalise(dir_alpha(non_empty_clusters(s)) - dir_prec(0), 1);
+      wghtSyn(occu_hist) = mean_pi1(occu_hist) / nj_val(occu_hist, inds);
+      wght_xSyn_new(s-1) = wghtSyn(del(arma::find(dat_index == s)));
+    }
+    
+    // PIT uniforms (unchanged except per-t mu/sig used above)
+    for (unsigned t = 0; t < n_trt; ++t) {
+      arma::uvec tmp = arma::find(trt_index == t);
+      arma::uvec tmp1= del(tmp);
+      arma::vec tmp2 = mu.col(t);
+      arma::vec tmp3 = sig.col(t);
+      unif(tmp) = normcdf(st_original(tmp), tmp2(tmp1), sqrt(tmp3(tmp1)));
+    }
+    unif(censored_indices) += randu(censored_indices.n_elem) % (1 - unif(censored_indices));
+    
+    // ============== HMC UPDATE: per-t lognormal hyperparams ==============
+    for (unsigned t = 0; t < n_trt; ++t) {                                            // [NEW]
+      arma::vec cur = current_params_t.col(t);                                        // [NEW] (mu0_t, log_beta0_t)
+      
+      const bool is_ctrl = (t == 0);                                                  // [NEW]
+      const arma::vec &del_range_t = is_ctrl ? del_range_lognorm_ref
+      : del_range_lognorm_oth;                 // [NEW]
+      const unsigned nleapfrog_t   = is_ctrl ? nleapfrog_lognorm_ref
+      : nleapfrog_lognorm_oth;                   // [NEW]
+      
+      // [NEW] per-t prior centers/vars
+      const double mu_m = mu_m_t(t);
+      const double mu_v = mu_v_t(t);
+      const double b_m  = b_m_t(t);
+      const double b_v  = b_v_t(t);
+      
+      // NOTE: updater must accept `t` as final arg, using nj_val_shared/survtime/ss_survtime slice t
+      update_lognorm_hyper_extend(                                                       // [NEW]
+        nj_val_shared, survtime, ss_survtime,
+        a0, df0, mu_m, mu_v, b_m, b_v,
+        del_range_t, nleapfrog_t, cur, acceptance_y(t), t
+      );
+      current_params_t.col(t) = cur;                                                  // [NEW]
+      // (You can optionally collect acc_t into a per-t vector if you want to save it)
+    }
+    // =====================================================================
+    
+    /****** HMC UPDATE of Dirichlet mixture parameters**********/
+    //update alpha_1 (for the current data mixture)
+    double l_alpha=log(alpha(0));
+    arma::uvec ind0 = {0};
+    update_alpha(nmix1, nj_val(occu_hist, ind0), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0));
+    alpha(0)=exp(l_alpha);    dir_prec(0)= alpha(0)/nmix1;
+    
+    //update alpha_2,..., alpha_S (for the RWD mixture)
+    for(unsigned s = 1; s < num_cohort; ++s)
+    {
+      double l_alpha=log(alpha(s));
+      arma::uvec inds = {s};
+      update_alpha(nmix, nj_val(non_empty_clusters(s), inds), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph(s));
+      alpha(s)=exp(l_alpha); dir_prec(s) = alpha(s)/nmix; prob_empty(s) = log(dir_prec(s));
+    }
+    /***********************************************************/
+    
+    if ( ((i + 1) % thin) == 0 ) {
+      double denom = static_cast<double>(i + 1);  // avoids /0 and forces floating division
+      Rcpp::Rcout << "MCMC iteration: " << i + 1 << std::endl;
+      arma::vec acc_rates_y = arma::conv_to<arma::vec>::from(acceptance_y) / denom;
+      acc_rates_y.t().print("Treatment Acceptance (lognormal hyper):");
+      
+      arma::vec acc_rates = arma::conv_to<arma::vec>::from(acceptance_alph) / denom;
+      acc_rates.t().print("Dataset Acceptance (alpha):");
+    }
+    
+    // ===== thinning & storage =====
+    int remainder = (i + 1);
+    int quotient  = (int) std::floor(remainder / thin);
+    remainder    -= (quotient * thin);
+    if (remainder == 0) {
+      arma::uword row = quotient - 1u;
+      alloc_var_mat.row(row) = del.t();
+      dir_alpha_mat.row(row) = alpha.t();
+      
+      for (unsigned s = 0; s < num_cohort; ++s)
+        pimat.slice(s).row(row) = pi.col(s).t();
+      
+      for (unsigned s = 0; s < (num_cohort - 1); ++s)
+        weightsSyn(s).row(row) = wght_xSyn_new(s).t();
+      
+      for (unsigned t = 0; t < n_trt; ++t) {
+        lognormal_mu.slice(t).row(row)  = mu.col(t).t();
+        lognormal_sig.slice(t).row(row) = sig.col(t).t();
+        
+        // [NEW] store per-t hyperparams
+        hyperparams_cube(row, 0, t) = current_params_t(0, t);        // mu0_t
+        hyperparams_cube(row, 1, t) = current_params_t(1, t);        // log_beta0_t
+      }
+      unifmat.row(row) = unif.t();
+    }
+    
+    // ===== Prediction path (unchanged except eta_pred imat + per-t y_pred) =====
+    if (n_pred != 0) {
+      arma::field<arma::uvec> non_na_obs_pred(n_pred), non_na_obs_cont_pred(n_pred);
+      unsigned cat_na_count_pred=0;
+      for (unsigned ii=0; ii<n_pred; ++ii) {
+        non_na_obs_pred(ii)      = Rcpp::as<arma::uvec>(non_na_obs1_pred[ii]);
+        cat_na_count_pred       += (k - (non_na_obs_pred(ii)).n_elem);
+        non_na_obs_cont_pred(ii) = Rcpp::as<arma::uvec>(non_na_obs1_cont_pred[ii]);
+      }
+      bool cat_na_pred = (cat_na_count_pred == (eta_pred.n_rows * eta_pred.n_cols));
+      
+      arma::uvec d_pred(nmix), del_pred(n_pred);
+      arma::mat y_pred(n_pred, n_trt);
+      arma::vec probs_pred(nmix), log_probs_pred(nmix);
+      arma::vec probs1_pred(nmix1, arma::fill::zeros);
+      
+      for (unsigned jj = 0; jj < n_pred; ++jj) {
+        long double log_DENp;
+        arma::vec cluster_prob_pred = arma::log(nj_val.col(0) + dir_prec(0));
+        log_probs_pred.fill(arma::datum::log_min);
+        
+        for (auto j : occu_hist) {
+          double dens_pred = arma::datum::log_min;
+          for (auto it1 : non_na_obs_pred(jj)) {
+            dens_pred += ( std::log( noccu(j,it1)(eta_pred(jj,it1)) + alpha_vec(it1) )
+                             - std::log( nobs(j,it1) + ncat(it1)*alpha_vec(it1) ) );
+          }
+          for (auto it2 : non_na_obs_cont_pred(jj)) {
+            dens_pred += post_t_dens(eta_cont_pred(jj,it2),
+                                     ss_j_x(j,it2), sum_j_x(j,it2),
+                                     df_x, alpha_x, mu_x, beta_x, nj_x(j,it2));
+          }
+          log_probs_pred(j) = dens_pred + cluster_prob_pred(j);
+        }
+        
+        arma::vec log_probs1_pred = log_probs_pred(occu_hist);
+        log_DENp = log_sum_exp(log_probs1_pred);
+        probs1_pred.zeros();
+        probs1_pred = arma::exp(log_probs1_pred - log_DENp);
+        probs_pred.zeros();
+        probs_pred(occu_hist) = probs1_pred;
+        
+        if (arma::sum(probs_pred) == 0) Rcpp::stop("sum(probs_pred) == 0)");
+        
+        del_pred(jj) = sample_categorical_cpp(probs_pred);
+        
+        for (unsigned t = 0; t < n_trt; ++t) {
+          y_pred(jj, t) = randn(distr_param(mu(del_pred(jj), t),
+                                std::sqrt(sig(del_pred(jj), t))));
+        }
+      }
+      
+      int remainder_pred = (i + 1);
+      int quotient_pred  = (int) std::floor(remainder_pred / thin);
+      remainder_pred    -= (quotient_pred * thin);
+      if (remainder_pred == 0) {
+        arma::uword rowp = quotient_pred - 1u;
+        alloc_var_mat_pred.row(rowp) = del_pred.t();
+        for (unsigned t = 0; t < n_trt; ++t)
+          y_pred_cube.slice(t).row(rowp) = y_pred.col(t).t();
+      }
+    }
+  } // end MCMC
+  
+  
+  arma::vec acceptance_all(num_cohort + n_trt, arma::fill::zeros);
+  acceptance_all.subvec(0, num_cohort-1) = 
+    arma::conv_to<arma::vec>::from(acceptance_alph) / ((double)(nrun+burn));
+  acceptance_all.subvec(num_cohort, num_cohort + n_trt - 1) =
+    arma::conv_to<arma::vec>::from(acceptance_y) / ((double)(nrun+burn));
+  
+  if (n_pred != 0) {
+    return Rcpp::List::create(
+      Rcpp::Named("picube")                 = pimat,
+      Rcpp::Named("Weights_Syn")            = weightsSyn,
+      Rcpp::Named("Lognormal_Mu_Cube")      = lognormal_mu,
+      Rcpp::Named("Lognormal_Sig_Cube")     = lognormal_sig,
+      Rcpp::Named("Unifs")                  = unifmat,
+      Rcpp::Named("Hyperparams_Cube")       = hyperparams_cube,      // [NEW]
+      Rcpp::Named("Dirichlet_params")       = dir_alpha_mat,
+      Rcpp::Named("Acceptance_rates")       = acceptance_all,
+      Rcpp::Named("Allocation_variables")   = alloc_var_mat,
+      Rcpp::Named("New_Categorical_Covariates") = eta_pred,
+      Rcpp::Named("New_Continuous_Covariates")  = eta_cont_pred,
+      Rcpp::Named("Predicted_Allocation_variables") = alloc_var_mat_pred,
+      Rcpp::Named("Predicted_Y")            = arma::exp(y_pred_cube)
+    );
+  } else {
+    return Rcpp::List::create(
+      Rcpp::Named("picube")                 = pimat,
+      Rcpp::Named("Weights_Syn")            = weightsSyn,
+      Rcpp::Named("Lognormal_Mu_Cube")      = lognormal_mu,
+      Rcpp::Named("Lognormal_Sig_Cube")     = lognormal_sig,
+      Rcpp::Named("Unifs")                  = unifmat,
+      Rcpp::Named("Hyperparams_Cube")       = hyperparams_cube,      // [NEW]
+      Rcpp::Named("Dirichlet_params")       = dir_alpha_mat,
+      Rcpp::Named("Acceptance_rates")       = acceptance_all,
+      Rcpp::Named("Allocation_variables")   = alloc_var_mat
+    );
+  }
+}
+
+// [[Rcpp::export]]
+Rcpp::List common_atoms_cat_lognormal(const unsigned nmix, arma::uvec ncat,
+                                      const double a0, const double df0,  const double mu_m,const double mu_v, const double b_m, const double b_v,//nomral and lognormal hyperparameters for the response
+                                      const int nrun,const  int burn, const int thin, 
+                                      arma::umat eta1, arma::umat eta2,
+                                      arma::mat eta_cont1, arma::mat eta_cont2,
+                                      arma::vec st1, arma::uvec nu1, //responses for the treatment
+                                      arma::vec st2, arma::uvec nu2, //responses for the synthetic control
+                                      Rcpp::List non_na_obs1,// NA observations in the categorical variable
+                                      Rcpp::List non_na_obs1_cont, // NA observations in the cont variable
+                                      arma::uvec del1, arma::uvec del2, 
+                                      const arma::vec &del_range_lognorm, const unsigned nleapfrog_lognorm,
+                                      const arma::vec &alpha_hyper, const arma::vec &del_range_alp1, const unsigned nleapfrog_alp1,
+                                      const arma::vec &del_range_alp2, const unsigned nleapfrog_alp2){
+  unsigned acceptance=0, acceptance_alph1=0, acceptance_alph2=0;
+  double mu_alp, sig_alp;
+  sig_alp=log1p(alpha_hyper(1) /gsl_pow_2(alpha_hyper(0))); mu_alp=log(alpha_hyper(0))-sig_alp/2;sig_alp=sqrt(sig_alp);
+  
+  const unsigned n1=st1.n_elem,n2=st2.n_elem, k=eta1.n_cols, k_cont=eta_cont1.n_cols;
+  const unsigned n=n1+n2;
+  double t1ppp;
+  
+  // double mu0=sqrt(mu_v)* randn()+mu_m, beta0=exp(sqrt(b_v)* randn()+b_m);
+  double mu0=mu_m, beta0=exp( b_v/2 +b_m);
+  arma::vec current_params(2);  current_params(0)=mu0; current_params(1)=log(beta0);
+  
+  arma::umat eta=join_cols( eta1, eta2 ); //categorical covariates
+  arma::mat eta_cont=join_cols( eta_cont1, eta_cont2 ); //cont covariates
+  arma::mat eta_cont_sq=square(eta_cont);
+  arma::uvec del=join_cols(del1,del2), nu=join_cols(nu1,nu2) ;
+  arma::vec st=join_cols(st1,st2);
+  const double max_st=5*max(st);
+  // Rcpp::Rcout<<"size(del)"<<size(del)<<endl;
+  field<arma::uvec> non_na_obs(n), non_na_obs_cont(n);
+  unsigned cat_na_count=0;
+  for(unsigned i=0;i<n;++i){ /**changing the data-type to field from input list**/ 
+    non_na_obs(i)=Rcpp::as<arma::uvec>(non_na_obs1[i]);
+    cat_na_count+= (k-(non_na_obs(i)).n_elem);
+    
+    non_na_obs_cont(i)=Rcpp::as<arma::uvec>(non_na_obs1_cont[i]);
+  }
+  bool cat_na= (cat_na_count==(eta.n_rows* eta.n_cols)); //TRUE if cat covariate is NULL
+  
+  unsigned j;
+  
+  /////Define MCMC storage matrices
+  unsigned n_mc=std::floor((nrun+burn)/thin);
+  arma::umat alloc_var_mat(n_mc, n); 
+  arma::mat weights2(n_mc, n2), weights(n_mc, nmix);
+  arma::mat pimat1(n_mc, nmix), pimat2(n_mc, nmix), dir_alpha_mat(n_mc, 2);
+  arma::mat lognormal_mu1(n_mc, nmix), lognormal_sig1(n_mc, nmix), lognormal_mu2(n_mc, nmix), lognormal_sig2(n_mc, nmix);
+  arma::mat hyperparams(n_mc, 2);
+  arma::mat unifmat(n_mc, n);
+  
+  ///////////////////////
+  
+  
+  // --- initialize loop objects --- //
+  uvec d(nmix); ////multinomial indicator for each sample
+  arma::vec probs(nmix),log_probs(nmix), alpha_vec(k,fill::value(1.0)); ////assignment probability for each sample
+  
+  ////set atoms for the categorical covariate
+  
+  unsigned count_cat=0;
+  eta.for_each( [ &count_cat](umat::elem_type val) {count_cat+= (!std::isfinite(val) )  ; } );
+  
+  field<arma::uvec> noccu(nmix,k);
+  for(unsigned i=0;i<nmix;++i){
+    for(unsigned j=0;j<k;++j){
+      if(!cat_na)
+        if(ncat(j)<2){
+          Rcpp::Rcout<<"j= "<<j<<" ncat(j)<2"<<endl;
+          Rcpp::stop("");
+        }
+        
+        noccu(i,j).set_size(ncat(j));
+        noccu(i,j).zeros();
+    }
+  }
+  //////
+  
+  ////set atoms for the cont covariates
+  arma::umat nj_x(nmix,k_cont,fill::zeros); //counts the number of non-missing observations for the cont covariates in each atom 
+  // arma::mat df_post_x(nmix,k_cont), alpha_post_x(nmix,k_cont), beta_post_x(nmix,k_cont), 
+  arma::mat sum_j_x(nmix,k_cont, fill::zeros), ss_j_x(nmix,k_cont, fill::zeros);
+  const double df_x=1, alpha_x=k_cont+ 30.0, beta_x=1.0, mu_x=0.0; //This is for the simulations
+  // const double df_x=3, alpha_x=k_cont+ 1.0, beta_x=.50, mu_x=0.0; //This is for the diagnostic
+  // df_post_x.fill(df_x); alpha_post_x.fill(alpha_x); beta_post_x.fill(beta_x);
+  ///////////////////////////////////////
+  
+  bool thincheck, printcheck;
+  field<arma::uvec> inds_eq_j(nmix), inds_eq_j1(nmix), inds_eq_j2(nmix);
+  
+  /********initialize parameters corresponding to clusters*******/
+  arma::vec nj_val1(nmix),nj_val2(nmix), nj_val(nmix);//occupancy number corresponding to each cluster
+  arma::vec survtime1(nmix,fill::zeros), ss_survtime1(nmix,fill::zeros), survtime2(nmix,fill::zeros), ss_survtime2(nmix,fill::zeros) ;
+  
+  Rcpp::Rcout<<"cluster occupancy finding starts!!"<<endl;
+  for(unsigned j=0;j<nmix;++j){
+    inds_eq_j1[j] =find(del.head(n1)==j); nj_val1(j)=(inds_eq_j1[j]) .n_elem; 
+    inds_eq_j2[j] =find(del.tail(n2)==j)+n1; nj_val2(j)=(inds_eq_j2[j]) .n_elem; 
+    inds_eq_j[j] =join_cols(inds_eq_j1[j],inds_eq_j2[j]);
+    nj_val(j)=nj_val1(j)+nj_val2(j);
+    
+    survtime1(j)= sum(st(inds_eq_j1[j]) ); //isfailure1(j)=sum(nu(inds_eq_j1[j] ));
+    survtime2(j)= sum(st(inds_eq_j2[j]) ); //isfailure2(j)=sum(nu(inds_eq_j2[j] ));
+    ss_survtime1(j)= ssq(st(inds_eq_j1[j]) ); 
+    ss_survtime2(j)= ssq(st(inds_eq_j2[j]) ); 
+    
+    if(nj_val(j)){
+      Rcpp::Rcout<<"n_inds at j="<<j<<" is "<<(inds_eq_j[j]) .n_elem<<endl;
+      /*if(nj_val2(j))
+       log_nj_val2(j)=log(nj_val2(j)+dir_prec);*/
+      
+      for(auto it1:inds_eq_j[j]){//it1 iterates through cluster membership indicators
+        for(auto it2:non_na_obs(it1)){//it2 iterates through non-missing variables of the categorical covariate for each observation
+          // Rcpp::Rcout<<"it1= "<<it1<<" it2 ="<<it2<<" eta(it1,it2)= "<<eta(it1,it2)<<endl;
+          ++noccu(j,it2)(eta(it1,it2));
+        }
+        for(auto it2:non_na_obs_cont(it1)){//it2 iterates through non-missing variables of the continuous covariates for each observation
+          // Rcpp::Rcout<<"it1= "<<it1<<" it2 ="<<it2<<" eta_cont(it1,it2)= "<<eta_cont(it1,it2)<<endl;
+          ++nj_x(j,it2);
+          sum_j_x(j,it2)+= eta_cont(it1,it2);
+          ss_j_x(j,it2)+= eta_cont_sq(it1,it2);// gsl_pow_2( eta_cont(it1,it2));
+        }
+      } 
+    }
+  }
+  // Rcpp::stop("check this: ");
+  if(sum_j_x.has_nan()|| ss_j_x.has_nan())
+    Rcpp::stop("sum_j_x.has_nan()|| ss_j_x.has_nan() ");
+  const arma::vec st_original=st;
+  const arma::uvec censored_indices= find(nu==0);
+  
+  //----------------------------------------------//
+  
+  ///find the number of non-NA observations for each variable
+  arma::umat nobs(nmix,k,fill::zeros);
+  for(unsigned l=0;l<nmix;++l)
+    for(unsigned j=0;j<k;++j){
+      nobs(l,j)= sum(noccu(l,j));
+      // Rcpp::Rcout<<"nobs(j,l)= "<<nobs(l,j)<< " nj_val(j)= "<<nj_val(l)<<endl;
+    }
+    //////////////////////////////////////////////////////////  
+    
+    Rcpp::Rcout<<"loop starts"<<endl;
+  // --- loop --- //
+  arma::uvec non_empty_clusters1=(find(nj_val1)), non_empty_clusters2=(find(nj_val2));
+  unsigned nmix1=non_empty_clusters2.n_elem;
+  double alpha1=1, alpha2=1;
+  double dir_prec1=alpha1/nmix1, dir_prec2=alpha2/nmix;
+  double prob_empty1= log(dir_prec1), prob_empty2= log(dir_prec2);
+  double df_post, alpha_post, tmp, ss_j, survtime_j, mean_j, mu_post, beta_post, sigma_post;
+  arma::vec unif1, unif2, unif;
+  
+  for(int i=0; i<nrun+burn; ++i){
+    /////////////Sanity check /////////////
+    /*Rcpp::Rcout<<"flag sanity"<<endl;
+     arma::uvec nobs_check(k,fill::zeros);
+     for(j=0;j<k;++j){
+     for(unsigned l=0;l<nmix;++l)
+     nobs_check(j)+= sum(noccu(l,j));
+     if(nobs_check(j) != nobs(j)){
+     Rcpp::Rcout<<"j = "<<j<<"nobs_check(j) != nobs(j)"<<endl;
+     Rcpp::Rcout<<"nobs_check(j)= "<<nobs_check(j) <<"  nobs(j)= "<<nobs(j)<<endl;
+     Rcpp::stop("");
+     }
+     }*/
+    //////////////////////////
+    
+    // --- Augment censored observations ---//
+    for(j=0; j<nmix; ++j){//Iterate over the clusters
+      ///notations mostly follow Wikipedia conjugate prior NIG
+      
+      ////UPDATE for the experimental arm
+      if(nj_val1(j)){
+        // Rcpp::Rcout<<"df0= "<<df0<<" a0= "<<a0<< " mu0= "<<mu0 <<" beta0= "<<beta0<< endl;
+        df_post=df0+ ( (double) nj_val1(j))-1; alpha_post=a0+ (( (double) nj_val1(j))-1) /2.0;
+        tmp=( ((double) (nj_val1(j)-1))*df0 )/df_post;
+        for(auto jj:inds_eq_j1[j] ){//Iterate over the observations
+          if(!nu(jj)){//censored observations
+            if(nj_val1(j)>1){
+              ss_j= ss_survtime1(j) - gsl_pow_2(st(jj) ), survtime_j = survtime1(j)- st(jj);
+              mean_j= survtime_j/(nj_val1(j) - 1 );
+            } else ss_j=  survtime_j =  mean_j= 0.0;
+            mu_post = (df0*mu0 + survtime_j) / df_post;
+            beta_post=beta0+  (ss_j -  ((double) nj_val1(j)-1) * gsl_pow_2(mean_j )  + tmp* gsl_pow_2(mean_j - mu0) )/2.0;
+            sigma_post =sqrt( beta_post * (df_post+1)/(df_post *alpha_post) );
+            st(jj)=r_trunclst(2*alpha_post,  mu_post, sigma_post,  st_original(jj), std::numeric_limits<double>::max());
+            st(jj)= GSL_MIN_DBL(st(jj), max_st);
+            /*if(st(jj)>log(100*52))
+             Rcpp::Rcout<<"jj="<<jj << " st_original(jj)="<<st_original(jj)<< " st(jj)="<<st(jj)<<endl;*/
+            ss_survtime1(j)=ss_j + gsl_pow_2(st(jj)); survtime1(j)= survtime_j +st(jj);
+          }
+        }
+      }
+      if(nj_val2(j)){
+        ////UPDATE for the synthetic control arm
+        df_post=df0+ nj_val2(j)-1, alpha_post=a0+ ((double) nj_val2(j)-1)/2.0;
+        tmp=( (nj_val2(j)-1)*df0 )/df_post;
+        for(auto jj:inds_eq_j2[j] ){//Iterate over the observations
+          if(!nu(jj)){//censored observations
+            if(nj_val2(j)>1){
+              ss_j= ss_survtime2(j) - gsl_pow_2(st(jj) ), survtime_j = survtime2(j)- st(jj);
+              mean_j= survtime_j/(nj_val2(j) - 1 );
+            } else ss_j=  survtime_j =  mean_j= 0.0;
+            mu_post = (df0*mu0 + survtime_j) / df_post;
+            beta_post=beta0+  (ss_j -  ((double) nj_val2(j)-1) * gsl_pow_2(mean_j )  + tmp* gsl_pow_2(mean_j - mu0) )/2.0;
+            sigma_post =sqrt( beta_post * (df_post+1)/(df_post *alpha_post) );
+            st(jj)=r_trunclst(2*alpha_post,  mu_post, sigma_post,  st_original(jj), std::numeric_limits<double>::max()); 
+            //df_post is not the degrees of freedom, its the precision parameter
+            st(jj)= GSL_MIN_DBL(st(jj), max_st );
+            /*if(st(jj)>log(100*52))
+             Rcpp::Rcout<<"jj="<<jj << " st_original(jj)="<<st_original(jj)<< " st(jj)="<<st(jj)<<endl;*/
+            ss_survtime2(j)=ss_j + gsl_pow_2(st(jj)); survtime2(j)= survtime_j +st(jj);
+          }
+        }
+      }
+    }
+    // Rcpp::Rcout<<"data augmentation done!"<<endl;
+    
+    
+    /***** UPDATE ALLOCATION VARIABLES *****/
+    arma::vec normal_exp(nmix),probs1;//exp2(nmix),exp1(nmix);
+    double  log_probs_max;//,normal_exp;
+    long double log_DEN;
+    for(unsigned jj=0;jj<n;++jj){
+      double dens,cluster_prob, pdf_empty,  st_sq=gsl_pow_2(st(jj));
+      log_probs.fill(datum::log_min);
+      // Rcpp::Rcout<<"log_pdf_empty="<<pdf_empty<<endl;
+      // Rcpp::stop("");
+      // Rcpp::Rcout<<"jj="<<jj<<"\t"<<"del(jj)="<<del(jj)<<endl;
+      unsigned current_ind=del(jj); //find the current index of data point jj
+      if(jj<n1){//this is for G_1
+        // Rcpp::Rcout<<" G1"<<endl;
+        for(j=0;j<nmix;++j){
+          // Rcpp::Rcout<<"j= "<<j<<" nj_val1(j)="<<nj_val1(j)<<endl;
+          if(nj_val2(j)){
+            if(j!=current_ind){
+              dens= surv_fn_lognorm( st_original(jj),  nu(jj), ss_survtime1(j), survtime1(j),
+                                     df0, a0, mu0, beta0, nj_val1(j));
+              
+              // Rcpp::Rcout<<"jj= "<<jj<< " nu(jj)= "<<nu(jj)<< " st(jj)= "<<st(jj)<< "st_original(jj)= "<<st_original(jj) << " j= "<<j<<" nj_val1(j)= "<<nj_val1(j) <<" dens= "<<dens<<endl;
+              
+              for(auto it:non_na_obs(jj))//density part from categorical covs
+                dens+=( log( noccu(j, it  )(eta(jj,it) )+  alpha_vec(it))-log(nobs(j,it) + ncat(it)*alpha_vec(it)  ) );
+              
+              for(auto it:non_na_obs_cont(jj))///density part from cont covs
+                dens+=( post_t_dens(eta_cont(jj,it) , ss_j_x(j,it), sum_j_x(j,it), 
+                                    df_x, alpha_x, mu_x, beta_x, nj_x(j,it) ) );
+              // Rcpp::Rcout<<"at j="<<j<<" log_density="<<dens<<"\t clust prob="<<cluster_prob<<endl;
+              cluster_prob=log(nj_val1(j)+dir_prec1);  //log_nj_val2(j);
+              
+              log_probs(j)=  dens +cluster_prob;
+              // Rcpp::Rcout<<"log_probs "<<j<< "\t"<<log_probs(j)<<endl;
+            }
+          }
+        }
+        //calculating allocation probabilities
+        j=current_ind;
+        if(nj_val(j)==0 || nj_val2(j)==0)   Rcpp::stop("nj_val(current_ind)=0 || nj_val2(current_ind)=0 jj in G_1");
+        // Rcpp::Rcout<<"flag 1"<<endl;
+        dens= surv_fn_lognorm( st_original(jj),  nu(jj), ss_survtime1(j)-st_sq, survtime1(j) -st(jj),
+                               df0, a0, mu0, beta0, nj_val1(j)-1);
+        // Rcpp::Rcout<<"jj= "<<jj<< " nu(jj)= "<<nu(jj)<< " st(jj)= "<<st(jj)<< "st_original(jj)= "<<st_original(jj) << " j= "<<j<<" nj_val1(current_ind)= "<<nj_val1(j) <<" dens= "<<dens<<endl;
+        for(auto it:non_na_obs(jj)){
+          /*double tmp_dens=( log( noccu(j, it  )(eta(jj,it) )-1 +  alpha_vec(it))-log( ncat(it)*alpha_vec(it) + nobs(j,it) -1) );
+           Rcpp::Rcout<<"tmp_dens cat="<<tmp_dens<<endl;
+           dens+=tmp_dens;*/
+          dens+=( log( noccu(j, it  )(eta(jj,it) )-1 +  alpha_vec(it))-log( ncat(it)*alpha_vec(it) + nobs(j,it) -1) );
+        }
+        for(auto it:non_na_obs_cont(jj)){///density part from cont covs
+          /*double tmp_dens=( post_t_dens(eta_cont(jj,it) , ss_j_x(j,it)-eta_cont_sq(jj,it), sum_j_x(j,it)- eta_cont(jj,it), 
+           df_x, alpha_x, mu_x, beta_x, nj_x(j,it)-1 ) );
+           Rcpp::Rcout<<"eta_cont(jj,it)="<<eta_cont(jj,it)<<" ss_j_x(j,it)="<<ss_j_x(j,it)<<" sum_j_x(j,it)="<<sum_j_x(j,it)<<" nj_x(j,it)="<<nj_x(j,it)<<" tmp_dens cont="<<tmp_dens<<endl;
+           dens+=tmp_dens;*/
+          dens+=( post_t_dens(eta_cont(jj,it) , ss_j_x(j,it)-eta_cont_sq(jj,it), sum_j_x(j,it)- eta_cont(jj,it), 
+                              df_x, alpha_x, mu_x, beta_x, nj_x(j,it)-1 ) );
+        }
+        
+        // Rcpp::Rcout<<"at j="<<j<<" log_density="<<dens<<"\t clust prob="<<cluster_prob<<endl;
+        cluster_prob=log(nj_val1(j)-1+dir_prec1);  //log_nj_val2(j);
+        // Rcpp::Rcout<<"flag 2"<<endl;
+        log_probs(j)=  dens +cluster_prob;
+        // Rcpp::Rcout<<"at current_ind dens="<<dens<<" cluster_prob="<<cluster_prob<<" log_probs(current_ind)"<<log_probs(j)<<endl;
+        
+        // (log_probs.t()).print("log_probs:");
+        
+        // non_empty_clusters2=  find(nj_val2);
+        arma::vec log_probs1=log_probs(non_empty_clusters2);
+        log_DEN=log_sum_exp(log_probs1);
+        probs1=exp(log_probs1-log_DEN); //normalise(exp(log_probs1-log_DEN) ,1);
+        // Rcpp::Rcout<<"flag 3"<<endl;
+      } else{//this is for G_2
+        // Rcpp::Rcout<<" G2"<<endl;
+        j=current_ind;
+        if(nj_val1(j) && nj_val2(j)==1){//the degenerate case
+          log_probs.fill(datum::log_min);
+          log_probs(j)=datum::log_max;
+        } else if(nj_val1(j) && !nj_val2(j)  ){//the infeasible case
+          Rcpp::stop("nj_val(current_ind)=0 || nj_val2(current_ind)=0 jj in G_2");
+        } else {//other possible cases
+          double pdf_empty = surv_fn_lognorm( st_original(jj),  nu(jj), 0.0, 0.0, df0, a0, mu0, beta0, 0);
+          //log(dens) for the categorical covariates for an empty cluster is 0. Verify!
+          for(auto it:non_na_obs_cont(jj))///density part from cont covs
+            pdf_empty+=( post_t_dens(eta_cont(jj,it) , 0.0, 0.0, df_x, alpha_x, mu_x, beta_x, 0 ) );
+          
+          for(j=0;j<nmix;++j){
+            if(j!=current_ind){
+              if(!nj_val(j) ){
+                dens=pdf_empty;
+                cluster_prob=prob_empty2;
+              } else{
+                dens= surv_fn_lognorm( st_original(jj),  nu(jj), ss_survtime2(j), survtime2(j),
+                                       df0, a0, mu0, beta0, nj_val2(j));
+                for(auto it:non_na_obs(jj))
+                  dens+=( log( noccu(j, it  )(eta(jj,it) ) +  alpha_vec(it))-log( ncat(it)*alpha_vec(it) + nobs(j,it) ) );
+                
+                for(auto it:non_na_obs_cont(jj))///density part from cont covs
+                  dens+=( post_t_dens(eta_cont(jj,it) , ss_j_x(j,it), sum_j_x(j,it), 
+                                      df_x, alpha_x, mu_x, beta_x, nj_x(j,it) ) );
+                // Rcpp::Rcout<<"at j="<<j<<" log_density="<<dens<<"\t clust prob="<<cluster_prob<<endl;
+                cluster_prob=log(nj_val2(j)+dir_prec2);  //log_nj_val2(j);
+              }
+              log_probs(j)=  dens +cluster_prob;
+            }
+          }
+          
+          if(nj_val(current_ind)==1){
+            dens= pdf_empty;
+            cluster_prob=prob_empty2;
+          } else{
+            j=current_ind;
+            // Rcpp::Rcout<<"jj= "<<jj<<" del(jj)= "<<del(jj)<<" current_ind="<<current_ind<<endl;
+            dens= surv_fn_lognorm( st_original(jj),  nu(jj), ss_survtime2(j)-st_sq, survtime2(j) -st(jj),
+                                   df0, a0, mu0, beta0, nj_val2(j)-1);
+            for(auto it:non_na_obs(jj))
+              dens+=( log( noccu(j, it  )(eta(jj,it) )-1 +  alpha_vec(it))-log( ncat(it)*alpha_vec(it) + nobs(j,it) -1) );
+            for(auto it:non_na_obs_cont(jj))///density part from cont covs
+              dens+=( post_t_dens(eta_cont(jj,it) , ss_j_x(j,it)-eta_cont_sq(jj,it), sum_j_x(j,it)- eta_cont(jj,it), 
+                                  df_x, alpha_x, mu_x, beta_x, nj_x(j,it)-1 ) );
+            cluster_prob=log(nj_val2(j)-1+dir_prec2);
+          }
+          
+          log_probs(current_ind)=  dens +cluster_prob;
+        }
+      }
+      
+      if(jj<n1){
+        // Rcpp::Rcout<<"flag 3 0"<<endl;
+        probs.zeros(nmix);
+        probs(non_empty_clusters2)=probs1;
+        // Rcpp::Rcout<<"flag 3 1"<<endl;
+        // (probs1.t()).print("probs1 :");
+        // (probs.t()).print("probs :");
+      } else{
+        log_DEN=log_sum_exp(log_probs);
+        probs= exp(log_probs-log_DEN);//normalise(exp(log_probs-log_DEN) ,1);
+      }
+      
+      // log_probs.print("log_probs: ");
+      // probs.print("probs: ");
+      
+      ////check if sum of the allocation probabilities is zero
+      if(sum(probs)==0) Rcpp::stop("sum(probs)=0");
+      ///////////////////////////////////////////////////////
+      del(jj) = sample_categorical_cpp(probs);
+      // Rcpp::Rcout<<"flag jj 4"<<endl;
+      
+      //updating cluster occupancies
+      if(del(jj)!=current_ind){
+        if(jj<n1){
+          --nj_val1(current_ind);
+          ++nj_val1(del(jj));
+          
+          survtime1(current_ind)-= st(jj);
+          ss_survtime1(current_ind)-= st_sq;
+          
+          survtime1(del(jj))+= st(jj);
+          ss_survtime1(del(jj))+= st_sq;
+        } else{
+          --nj_val2(current_ind);
+          ++nj_val2(del(jj));
+          
+          survtime2(current_ind)-= st(jj);
+          ss_survtime2(current_ind)-= st_sq;
+          
+          survtime2(del(jj))+= st(jj);
+          ss_survtime2(del(jj))+= st_sq;
+        }
+        --nj_val(current_ind);
+        ++nj_val(del(jj));
+        // Rcpp::Rcout<<"flag 3 3"<<endl;
+        
+        //update atoms of the categorical covs
+        for(auto it:non_na_obs(jj)){ 
+          --noccu(current_ind, it  )(eta(jj,it) );
+          ++noccu(del(jj), it  )(eta(jj,it) );
+          
+          --nobs(current_ind, it);
+          ++nobs(del(jj), it);
+          
+          /*if(nobs(del(jj), it)>nj_val(del(jj)))
+           Rcpp::stop("nobs(del(jj), it)>nj_val(del(jj))");*/
+        }
+        /////////////
+        
+        //update atoms of the cont covs
+        arma::uvec tmp_current_ind={current_ind}, tmp_del_jj={del(jj)}, tmp_jj={jj};;
+        
+        nj_x(tmp_current_ind,non_na_obs_cont(jj))-=1;
+        nj_x(tmp_del_jj,non_na_obs_cont(jj))+=1;
+        
+        ss_j_x(tmp_current_ind,non_na_obs_cont(jj))-= eta_cont_sq(tmp_jj,non_na_obs_cont(jj));
+        ss_j_x(tmp_del_jj,non_na_obs_cont(jj))+= eta_cont_sq(tmp_jj,non_na_obs_cont(jj));
+        
+        sum_j_x(tmp_current_ind,non_na_obs_cont(jj))-= eta_cont(tmp_jj,non_na_obs_cont(jj));
+        sum_j_x(tmp_del_jj,non_na_obs_cont(jj))+= eta_cont(tmp_jj,non_na_obs_cont(jj));
+        //////////////////////////////
+      }
+    }
+    // Rcpp::stop("1 MC iteration done!");
+    non_empty_clusters1=(find(nj_val1)); non_empty_clusters2=(find(nj_val2));
+    
+    unsigned nmix1=non_empty_clusters2.n_elem;
+    double dir_prec1=alpha1/nmix1;
+    // Rcpp::Rcout<<"allocation variables updated"<<endl;
+    
+    /*** UPDATE MIXTURE PROBABILITY ***/
+    unsigned counttttt=0,count1=0,count2=0;
+    arma::vec pi1(nmix,fill::zeros), pi2(nmix),pi1_tmp(nmix1);
+    arma::vec mu1(nmix,fill::zeros), sig1(nmix,fill::zeros), mu2(nmix,fill::zeros), sig2(nmix,fill::zeros);
+    
+    for(j=0; j<nmix; ++j){
+      if(nj_val(j))
+        ++counttttt;
+      if(nj_val1(j)){
+        ++count1;
+        inds_eq_j1[j] =find(del.head(n1)==j);
+      } else inds_eq_j1[j].reset();
+      if(nj_val2(j)){
+        ++count2;
+        inds_eq_j2[j] =find(del.tail(n2)==j)+n1;
+      } else inds_eq_j2[j].reset();
+      inds_eq_j[j] =join_cols(inds_eq_j1[j],inds_eq_j2[j]);
+      
+      if((inds_eq_j1[j]).n_elem != nj_val1(j) || (inds_eq_j2[j]).n_elem != nj_val2(j) ){
+        Rcpp::Rcout<<"inds_eq_j1[j]).n_elem="<<(inds_eq_j1[j]).n_elem<<"\t"<<"nj_val1("<<j<<")="<<nj_val1(j)<<endl;
+        Rcpp::Rcout<<"inds_eq_j2[j]).n_elem="<<(inds_eq_j2[j]).n_elem<<"\t"<<"nj_val2("<<j<<")="<<nj_val2(j)<<endl;
+        Rcpp::stop("Occupancy mismatch!!!");
+      }
+      
+      ///simulate parameters corresponding to the response variable
+      /* we have to do this for all non-empty clusters of X2, that's why simulating
+       * lam1(j)'s also. For nj_val1(j)=0, lam1(j) will get simulated from the prior distribution.       */
+      
+      // Rcpp::Rcout<<"Treatment"<<endl;
+      arma::vec tmpvec=sim_lognorm_params(ss_survtime1(j) , survtime1(j), df0, a0, mu0, beta0, nj_val1(j));
+      mu1(j)=tmpvec(0); sig1(j)=tmpvec(1);
+      
+      // Rcpp::Rcout<<"Synthetic j= "<<j<<" ss_survtime2(j)= "<<ss_survtime2(j)<<" survtime2(j)= "<< survtime2(j)  <<endl;
+      tmpvec=sim_lognorm_params(ss_survtime2(j) , survtime2(j), df0, a0, mu0, beta0, nj_val2(j) );
+      mu2(j)=tmpvec(0); sig2(j)=tmpvec(1);
+      // if(sig2(j)>100)
+      //   Rcpp::Rcout<<"j= "<<j<<" sig= "<<sig2(j) <<" nj_val2(j)= "<<nj_val2(j)<< "ss_survtime2(j)= "<< ss_survtime2(j)<<endl;
+      /////////////////////////////////////
+    }
+    
+    
+    arma::vec dir_alpha= nj_val2+ dir_prec2; //posterior parameters for pi2
+    pi2 = rdirichlet_cpp(dir_alpha); //simulate pi2 from Dirichlet
+    // pi2=normalise(dir_alpha,1);
+    
+    
+    // arma::vec dir_alpha1=conv_to<arma::vec>::from( nj_val1(non_empty_clusters1))+ dir_prec1; //only clusters with observations (cheating!)
+    arma::vec dir_alpha1= nj_val1(non_empty_clusters2)+ dir_prec1; //posterior parameters for pi1
+    pi1_tmp = rdirichlet_cpp(dir_alpha1); //simulate pi1 from Dirichlet (restricted to the non-empty clusters of X2)
+    pi1.zeros(); pi1(non_empty_clusters2)=pi1_tmp; //for programming convenience, we set length(pi1)=nmix and set the indices corresponding to the empty clusters of X2=0
+    // pi1.zeros(); pi1(non_empty_clusters)=normalise(dir_alpha1,1);
+    // pi1.zeros(); pi1(non_empty_clusters1)=normalise(dir_alpha1,1); //assigning weights to only non-empty clusters in the posterior
+    
+    arma::vec  wght2(nmix,fill::zeros), mean_pi1(nmix,fill::zeros);
+    mean_pi1(non_empty_clusters2)=normalise(dir_alpha1-dir_prec1,1);
+    // Rcpp::Rcout<<"flag 101"<<endl;
+    wght2(non_empty_clusters2)=mean_pi1(non_empty_clusters2)  /nj_val2(non_empty_clusters2); //E(\pi_{1h}| c_{1:n}) /n_{2h}
+    // wght2.t().print("wght2:");
+    // wght2(non_empty_clusters2)=( (n2-1+alpha)/(n1+alpha) )* (dir_alpha1/(dir_alpha(non_empty_clusters2)-1)); //E(\pi_{1h}/\pi_{2h}| c_{1:n}) 
+    // Rcpp::Rcout<<"flag 102"<<endl;
+    ////////////////////////////////////////////////
+    
+    ///assigning prior weights to the empty clusters in group 1
+    /*wght(non_empty_clusters2)= ( (n2-1+alpha)/(n1+alpha) )* (dir_alpha1/(dir_alpha(non_empty_clusters2)-1)) ;
+     wght2(non_empty_clusters2)=   (dir_alpha1/(n1+alpha)) ; //weight of clusters in the clinical arm*/
+    //////////////////////
+    
+    arma::vec  wght_x2_new=wght2(del.tail(n2));
+    
+    
+    /*****Generate Uniforms for model validation *****/
+    unif1= normcdf(st_original.head(n1), mu1(del.head(n1)) , sqrt (sig1(del.head(n1))) ) ;
+    unif2= normcdf(st_original.tail(n2), mu2(del.tail(n2)) , sqrt(sig2(del.tail(n2))) );
+    unif=join_cols(unif1, unif2);
+    unif(censored_indices)+= randu(censored_indices.n_elem)% (1- unif(censored_indices)  ); //adjustment from cao et al (2010) Biometrics paper
+    /*************************************************/
+    
+    
+    /****************HMC UPDATE OF mu0, beta0**********/
+    update_lognorm_hyper(nj_val1, nj_val2, survtime1, ss_survtime1,
+                         survtime2, ss_survtime2,
+                         a0, df0, mu_m, mu_v, b_m, b_v,
+                         del_range_lognorm, nleapfrog_lognorm, current_params, acceptance);
+    mu0=current_params(0), beta0=exp(current_params(1));
+    /*******************************************************/
+    
+    
+    /****** HMC UPDATE of Dirichlet mixture parameters**********/
+    //update alpha_1 (for the nested mixture)
+    double l_alpha=log(alpha1); 
+    update_alpha(nmix1,   nj_val1(non_empty_clusters1), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph1);
+    alpha1=exp(l_alpha);    dir_prec1=alpha1/nmix1; 
+    //////////////////////////
+    
+    //update alpha_2 (for the rwd mixture)
+    l_alpha=log(alpha2); 
+    update_alpha(nmix,   nj_val2(non_empty_clusters2), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph2);
+    alpha2=exp(l_alpha);    dir_prec2=alpha2/nmix; prob_empty2= log(dir_prec2);
+    //////////////////////////
+    /***********************************************************/
+    
+    
+    thincheck = i - std::floor(i/thin) * thin; // % operator stolen by arma
+    if(!thincheck )
+      Rcpp::Rcout<<"Iteration: "<<i<<" Acceptance lognorm= "<< ((double)acceptance)/i<< 
+        " Acceptance alpha1= "<< ((double)acceptance_alph1)/i<< " Acceptance alpha2= "<< ((double)acceptance_alph2)/i<< endl;
+    
+    // Rcpp::Rcout<<"Iteration: "<<i<<" # Acceptance= "<<acceptance<<" Acceptance prob= "<< ((double)acceptance)/i<<" log_prob="<<log_prob<< endl;
+    
+    int remainder= (i+1 );
+    int quotient= (int) std::floor(remainder/thin);
+    remainder-= (quotient*thin) ;
+    
+    if(remainder==0){
+      alloc_var_mat.row(quotient-1)=del.t();
+      pimat1.row(quotient-1)=pi1.t();
+      pimat2.row(quotient-1)=pi2.t();
+      weights2.row(quotient-1)=wght_x2_new.t(); //probability of the cluster
+      // weights.row(quotient-1)=wght2.t();
+      
+      dir_alpha_mat.row(quotient-1)={alpha1,alpha2};
+      
+      lognormal_mu1.row(quotient-1)=mu1.t(); lognormal_sig1.row(quotient-1)= sig1.t();
+      lognormal_mu2.row(quotient-1)=mu2.t(); lognormal_sig2.row(quotient-1)= sig2.t();
+      
+      hyperparams.row(quotient-1)= current_params.t();
+      unifmat.row(quotient-1)=unif.t();
+    }
+  }
+  
+  
+  field<arma::mat> lognormal_params1(2), lognormal_params2(2);
+  lognormal_params1(0)= lognormal_mu1; lognormal_params1(1)= lognormal_sig1;
+  lognormal_params2(0)= lognormal_mu2; lognormal_params2(1)= lognormal_sig2;
+  
+  return Rcpp::List::create(Rcpp::Named("pimat1") =pimat1,
+                            Rcpp::Named("pimat2") =pimat2,
+                            Rcpp::Named("Allocation variables") = alloc_var_mat,
+                            Rcpp::Named("Weights2")=weights2,
+                            Rcpp::Named("Lognormal_params1")=lognormal_params1,
+                            Rcpp::Named("Lognormal_params2")=lognormal_params2,
+                            Rcpp::Named("Unifs")=unifmat,
+                            Rcpp::Named("Lognormal_hyperparams")=hyperparams,
+                            Rcpp::Named("Dirichlet_params")=dir_alpha_mat,
+                            Rcpp::Named("Acceptance rates")= 
+                              Rcpp::NumericVector::create((double)acceptance_alph1, (double)acceptance_alph2, (double)acceptance )/((double)(nrun+burn) )
+  );
+}
+
+
+

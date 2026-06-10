@@ -28,7 +28,7 @@ Imports:
     Rcpp,
     RcppArmadillo,
     RcppDist,
-    RcppGSL,
     purrr,
-    rstudioapi
+    rstudioapi,
     mcclust
+

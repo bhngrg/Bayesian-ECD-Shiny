@@ -9,7 +9,6 @@ required_packages <- c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
-  "RcppGSL",
   "matrixStats",
   "mcclust"
 )
