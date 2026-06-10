@@ -1,0 +1,26 @@
+.Rhistory
+.RData
+.Rproj.user/
+.DS_Store
+*.Rproj
+__MACOSX/
+
+# temporary outputs
+*.zip
+*.xlsx
+*.png
+*.pdf
+
+# local scratch folders / accidental large data dumps
+data_raw/
+large_data/
+tmp/
+temp/
+outputs/
+
+# OS/editor files
+Thumbs.db
+.vscode/
+
+# local backup of untouched original development files
+original_files/

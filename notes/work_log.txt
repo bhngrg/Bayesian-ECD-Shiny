@@ -1,0 +1,22 @@
+Step 1: Created temporary organization folder.
+Step 2: Copied untouched original files into original_files/.
+Step 3: Created blank cleaned files in app_core/ and app/.
+Step 4: Created dependency map for app-core functions.
+Step 5: Cleaned and sourced Robust_stage_1and2.cpp.
+Step 6: Created and sourced survival-utils.R.
+Step 7: Created and sourced cappmx-extend-approx-fit.R.
+Step 8: Created and sourced plotting.R.
+Step 9: Created and sourced rmst-utils.R.
+Step 10: Created and sourced subgroup-analysis.R.
+Step 11: Full clean-source test passed; all app-core functions exist.
+Step 12: Split stored MCMC output into component-level .rds files under app/data/storedMCMCiter/ to avoid a single large GitHub-tracked object.
+Step 13: Updated helpers.R to load stored MCMC components from app/data/storedMCMCiter/ and reconstruct storedMCMCiter for app use.
+Step 14: Updated app.R to source local app_core files instead of relying on the installed ExtendedCAPPMx package.
+Step 15: Replaced ExtendedCAPPMx-dependent parallel workers with foreach/doParallel workers using locally sourced functions passed through .export.
+Step 16: Replaced Rcpp log_sum_exp usage inside R-level survival/density helpers with matrixStats::logSumExp() to avoid external-pointer issues in parallel workers.
+Step 17: Added prediction workflow to app.R, including Prediction Data, Prediction Output, and Prediction RMST Output tabs.
+Step 18: Added covariate-only prediction data upload support.
+Step 19: Added pred_result() workflow using cappmx_extend_approx_fit(..., input_df_pred = pred_data()) to generate Predicted_Allocation_variables in the prediction result object.
+Step 20: Reused subgroup_data(..., use_pred = TRUE) for full prediction-dataset and prediction-subgroup survival and hazard-ratio summaries.
+Step 21: Reused RMST_result() for prediction RMST summaries based on the selected prediction cohort/subgroup.
+Step 22: Confirmed prediction routine works successfully in the Shiny app.
