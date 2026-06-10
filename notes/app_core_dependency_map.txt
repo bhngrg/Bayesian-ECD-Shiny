@@ -2,14 +2,16 @@ Goal:
 Organize the minimum code needed to run the Shiny app before creating an R package.
 
 Original files:
-- original_files/usingGowerDistance.R
-- original_files/Robust_stage_1and2.cpp
-- original_files/helper_functons.R
-- original_files/app.R
-- original_files/helpers.R
-- original_files/custom.css
+
+* original_files/usingGowerDistance.R
+* original_files/Robust_stage_1and2.cpp
+* original_files/helper_functons.R
+* original_files/app.R
+* original_files/helpers.R
+* original_files/custom.css
 
 App-core R functions to keep:
+
 1. cappmx_extend_approx_fit()
 2. extract_MCMC_storage()
 3. density.fn.lognorm()
@@ -21,6 +23,7 @@ App-core R functions to keep:
 9. rmst_calc()  [shared helper used by RMST_result() and related RMST utilities]
 
 App-core C++ functions to keep:
+
 1. log_sum_exp()
 2. surv_fn_lognorm()
 3. post_t_dens()
@@ -33,52 +36,57 @@ Note:
 The C++ log_sum_exp() function is still retained for C++ routines, but R-level density/survival helper functions use matrixStats::logSumExp() for compatibility with foreach/doParallel PSOCK workers.
 
 C++ dependency note:
-The app-core C++ file no longer depends on RcppGSL or the external GNU Scientific Library. Former GSL utilities were replaced with R/Rcpp-compatible alternatives, including R::digamma(), R::lgammafn(), R::runif(), R::rgamma(), and small local helper functions for squared terms, integer maximums, and double minimums. This makes the app easier to install across macOS, Windows, and Linux because no external GSL system library is required.
+The app-core C++ file no longer depends on RcppGSL, the external GNU Scientific Library, or OpenMP. Former GSL utilities were replaced with R/Rcpp-compatible alternatives, including R::digamma(), R::lgammafn(), R::runif(), R::rgamma(), and small local helper functions for squared terms, integer maximums, and double minimums. The unused OpenMP header and Rcpp OpenMP plugin were removed because the retained C++ routines do not use OpenMP-specific functions or #pragma omp directives. This makes the app easier to install across macOS, Windows, and Linux because no external GSL system library or OpenMP compiler support is required.
 
 The retained C++ routines now require:
-- Rcpp
-- RcppArmadillo
-- RcppDist
+
+* Rcpp
+* RcppArmadillo
+* RcppDist
 
 C++ functions to exclude:
+
 1. common_atoms_cat_lognormal()
 2. common_atoms_cat_lognormal_shared()
 
 Additional user-facing analysis utilities:
-- posterior_prob_hr_lt()
-- posterior_prob_rmst()
+
+* posterior_prob_hr_lt()
+* posterior_prob_rmst()
 
 These functions are not used directly by the Shiny app, but are included under analysis_utils/ so users can compute posterior probabilities manually from Bayesian-ECD result objects.
 
 CRAN/package dependencies:
-- shiny
-- bslib
-- tibble
-- dplyr
-- readr
-- ggplot2
-- reshape2
-- plyr
-- foreach
-- doParallel
-- matrixStats
-- DT
-- patchwork
-- gridExtra
-- gt
-- writexl
-- zip
-- Rcpp
-- RcppArmadillo
-- RcppDist
-- purrr
-- rstudioapi
-- mcclust
+
+* shiny
+* bslib
+* tibble
+* dplyr
+* readr
+* ggplot2
+* reshape2
+* plyr
+* foreach
+* doParallel
+* matrixStats
+* DT
+* patchwork
+* gridExtra
+* gt
+* writexl
+* zip
+* Rcpp
+* RcppArmadillo
+* RcppDist
+* purrr
+* rstudioapi
+* mcclust
 
 Base/recommended R packages:
-- stats
-- parallel
-- grid
+
+* stats
+* parallel
+* grid
 
 Parallelization note:
 The app-core functions use foreach + doParallel with parallel::makeCluster(), which should be cross-platform because it uses PSOCK-style clusters rather than Unix-only forking. Custom locally sourced functions used inside foreach workers should be passed through .export rather than relying on an installed ExtendedCAPPMx package.
@@ -88,13 +96,13 @@ Parallel workers should be cleaned up with on.exit() immediately after cluster c
 
 Recommended pattern:
 
-  cl <- parallel::makeCluster(ncores)
-  doParallel::registerDoParallel(cl)
+cl <- parallel::makeCluster(ncores)
+doParallel::registerDoParallel(cl)
 
-  on.exit({
-    try(parallel::stopCluster(cl), silent = TRUE)
-    try(foreach::registerDoSEQ(), silent = TRUE)
-  }, add = TRUE)
+on.exit({
+try(parallel::stopCluster(cl), silent = TRUE)
+try(foreach::registerDoSEQ(), silent = TRUE)
+}, add = TRUE)
 
 Performance note:
 The plotting, RMST, and subgroup helper functions intentionally retain foreach + doParallel parallelization to keep Shiny output generation responsive. Parallel workers are created with parallel::makeCluster(), which is more portable across Mac, Linux, and Windows than fork-based parallelization. Locally sourced helper functions are passed to workers using .export, and log-sum-exp calculations use matrixStats::logSumExp() rather than the Rcpp log_sum_exp() function to avoid external-pointer issues in PSOCK workers.
@@ -104,24 +112,25 @@ The Shiny app now supports prediction on a new covariate-only dataset. The predi
 
 Prediction is handled by rerunning cappmx_extend_approx_fit() with the original modeling dataset as input_df and the new prediction dataset as input_df_pred:
 
-  cappmx_extend_approx_fit(
-    result_CAPPMx = result.CAPPMx.base,
-    input_df = data(),
-    input_specs = input.specs(),
-    ref_trt = input$pred_ref_treatment_selection,
-    input_df_pred = pred_data(),
-    ...
-  )
+cappmx_extend_approx_fit(
+result_CAPPMx = result.CAPPMx.base,
+input_df = data(),
+input_specs = input.specs(),
+ref_trt = input$pred_ref_treatment_selection,
+input_df_pred = pred_data(),
+…
+)
 
-This produces Predicted_Allocation_variables in the returned prediction result object used by the prediction tabs. Prediction outputs then call subgroup_data(..., use_pred = TRUE), which uses Predicted_Allocation_variables instead of Allocation_variables.
+This produces Predicted_Allocation_variables in the returned prediction result object used by the prediction tabs. Prediction outputs then call subgroup_data(…, use_pred = TRUE), which uses Predicted_Allocation_variables instead of Allocation_variables.
 
 The Prediction Output tab supports both:
-- the full uploaded prediction dataset, when no subgroup filters are applied;
-- a selected prediction subgroup, when subgroup filters are enabled.
 
-The Prediction RMST Output tab reuses RMST_result() on the prediction subgroup object returned by subgroup_data(..., use_pred = TRUE). This makes prediction RMST output structurally parallel to the existing Subgroup RMST Output.
+* the full uploaded prediction dataset, when no subgroup filters are applied;
+* a selected prediction subgroup, when subgroup filters are enabled.
+
+The Prediction RMST Output tab reuses RMST_result() on the prediction subgroup object returned by subgroup_data(…, use_pred = TRUE). This makes prediction RMST output structurally parallel to the existing Subgroup RMST Output.
 
 Shiny launch note:
-For local testing, the recommended launch method is RStudio's Run App > Run in Window option. External browser mode may open multiple tabs if older Shiny sessions remain active or if the RStudio/browser launcher state is not fully cleared.
+For local testing, the recommended launch method is RStudio’s Run App > Run in Window option. External browser mode may open multiple tabs if older Shiny sessions remain active or if the RStudio/browser launcher state is not fully cleared.
 
 When finished, users should stop the app using the red Stop button in RStudio before launching it again.

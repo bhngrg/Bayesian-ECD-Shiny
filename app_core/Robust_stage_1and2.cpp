@@ -1,15 +1,11 @@
 #include <RcppArmadillo.h>
 #include <RcppDist.h>
-#include <sstream>
-#include <iostream>
-#include <fstream>
-
-#include<trunclst.h>
+#include <trunclst.h>
 #include <limits>
 #include <cmath>
+
 // [[Rcpp::depends(RcppArmadillo,RcppDist)]]
 // [[Rcpp::plugins(cpp17)]]
-// [[Rcpp::plugins(openmp)]]
 
 using namespace arma;
 
