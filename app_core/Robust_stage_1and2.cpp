@@ -3,7 +3,6 @@
 #include <sstream>
 #include <iostream>
 #include <fstream>
-#include <omp.h>
 
 #include<trunclst.h>
 #include <limits>
