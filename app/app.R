@@ -539,11 +539,27 @@ server <- function(input, output, session) {
   # ------------------------------------------------------------
   data <- reactive({
     req(input$file1)
-    read_csv(
+    req(input.specs())
+    
+    df <- read_csv(
       input$file1$datapath,
       col_select = as.character(c(input$ID, unlist(input.specs()))),
       show_col_types = FALSE
     )
+    
+    # Ensure categorical variables are stored as factors for model/subgroup functions.
+    cat_vars <- input.specs()$cat_vars
+    
+    if (!is.null(cat_vars) && length(cat_vars) > 0) {
+      df[cat_vars] <- lapply(df[cat_vars], as.factor)
+    }
+    
+    # Also treat ID, treatment, and cohort/source columns as factors.
+    df[[input$ID]] <- as.factor(df[[input$ID]])
+    df[[input.specs()$trt_type]] <- as.factor(df[[input.specs()$trt_type]])
+    df[[input.specs()$dat_type]] <- as.factor(df[[input.specs()$dat_type]])
+    
+    df
   })
   
   data.mod <- reactive({
@@ -598,7 +614,17 @@ server <- function(input, output, session) {
       )
     }
     
-    pred_raw[, required_cols, drop = FALSE]
+    df <- pred_raw[, required_cols, drop = FALSE]
+    
+    cat_vars <- input.specs()$cat_vars
+    
+    if (!is.null(cat_vars) && length(cat_vars) > 0) {
+      df[cat_vars] <- lapply(df[cat_vars], as.factor)
+    }
+    
+    df[[input$pred_ID]] <- as.factor(df[[input$pred_ID]])
+    
+    df
   })
   
   pred_data.mod <- reactive({
