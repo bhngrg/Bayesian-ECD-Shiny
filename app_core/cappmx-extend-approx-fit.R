@@ -795,62 +795,96 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     result_CAPPMx,
     trt.convert,               # 0-based [old, new] mapping
     T_new,                     # number of Stage-2 treatments
-    input_df,                  # Stage-2 dataset with cols: trt, os, os_status
+    input_df,                  # Stage-2 dataset
+    input_specs,               # app-provided column names
     ref_trt = "Control",
     use_last_half = TRUE,
-    a0 = 10.1,                 # used only for Stage-2-unique arms (Stage-1 recipe)
-    cc = 2,                    # used only for Stage-2-unique arms (Stage-1 recipe)
-    s2_beta = 5,                # target Var[beta] used in Stage-1 recipe
+    a0 = 10.1,                 # used only for Stage-2-unique arms
+    cc = 2,                    # used only for Stage-2-unique arms
+    s2_beta = 5,               # target Var[beta] used in Stage-1 recipe
     eb_beta_unique = FALSE,
     beta_temper_tau     = 10,
     beta_cap_q          = c(0.10, 0.90),
     beta_var_floor_mult = 1.0,
     min_failures_for_EB = 3
     ) {
-      if (is.null(result_CAPPMx$Lognormal_hyperparams))
+      if (is.null(result_CAPPMx$Lognormal_hyperparams)) {
         stop("Stage 1 output missing $Lognormal_hyperparams.")
-      H <- result_CAPPMx$Lognormal_hyperparams  # [M x 2 x T_old]; [,1]=mu0_t, [,2]=beta0_t (>0)
-      dH <- dim(H); if (length(dH) != 3L || dH[2] != 2L)
+      }
+      
+      H <- result_CAPPMx$Lognormal_hyperparams  # [M x 2 x T_old]; [,1]=mu0_t, [,2]=beta0_t
+      
+      dH <- dim(H)
+      if (length(dH) != 3L || dH[2] != 2L) {
         stop("$Lognormal_hyperparams must be [M x 2 x T_old].")
-      M <- dH[1]; T_old <- dH[3]
+      }
       
-      # draws to use
-      draw_idx <- if (use_last_half) seq.int(floor(M/2) + 1L, M) else seq_len(M)
+      M <- dH[1]
+      T_old <- dH[3]
       
-      # tidy convert (0-based indices in both columns)
+      # Required column names from input_specs
+      trt_col <- input_specs$trt_type
+      os_col <- input_specs$response
+      censor_col <- input_specs$censor_ind
+      
+      required_model_cols <- c(trt_col, os_col, censor_col)
+      missing_model_cols <- setdiff(required_model_cols, names(input_df))
+      
+      if (length(missing_model_cols) > 0) {
+        stop(
+          "input_df is missing required model-fitting column(s): ",
+          paste(missing_model_cols, collapse = ", ")
+        )
+      }
+      
+      # Draws to use
+      draw_idx <- if (use_last_half) {
+        seq.int(floor(M / 2) + 1L, M)
+      } else {
+        seq_len(M)
+      }
+      
+      # Tidy treatment conversion table
       tc <- as.data.frame(trt.convert)
-      names(tc) <- c("old","new")
+      names(tc) <- c("old", "new")
       tc$new[is.na(tc$new)] <- -1L
       tc <- unique(tc)
       
-      # validate T_new (explicit)
+      # Validate T_new
       stopifnot(length(T_new) == 1L, is.finite(T_new), T_new >= 1L)
       
-      # Pre-alloc (Stage-2 order, 0..T_new-1)
+      # Pre-allocate in Stage-2 treatment order
       mu_m_t <- mu_v_t <- b_m_t <- b_v_t <- rep(NA_real_, T_new)
       
-      # ---------- SHARED (overlap) arms: borrow Stage-1 ----------
-      overlap <- tc[tc$new >= 0L & tc$new < T_new & tc$old >= 0L & tc$old < T_old, , drop = FALSE]
-      if (nrow(overlap) == 0L)
+      # ---------- SHARED / OVERLAPPING ARMS ----------
+      overlap <- tc[
+        tc$new >= 0L & tc$new < T_new &
+          tc$old >= 0L & tc$old < T_old,
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(overlap) == 0L) {
         stop("No overlapping treatments between Stage 1 and Stage 2.")
+      }
       
       per_arm <- lapply(seq_len(nrow(overlap)), function(ii) {
-        t_old0 <- overlap$old[ii]               # 0-based (Stage-1)
-        t_new  <- overlap$new[ii]               # 0-based (Stage-2)
-        t_old  <- t_old0 + 1L                   # 1-based for H
+        t_old0 <- overlap$old[ii]   # 0-based Stage-1 index
+        t_new  <- overlap$new[ii]   # 0-based Stage-2 index
+        t_old  <- t_old0 + 1L       # 1-based index for R array
         
         mu_draws   <- as.numeric(H[draw_idx, 1, t_old])
         beta_draws <- as.numeric(H[draw_idx, 2, t_old])
         
         ok_mu <- is.finite(mu_draws)
-        ok_b  <- is.finite(beta_draws) & (beta_draws > 0)
+        ok_b  <- is.finite(beta_draws) & beta_draws > 0
         
         if (!any(ok_mu) || !any(ok_b)) {
           return(list(t_old = t_old0, t_new = t_new, ok = FALSE))
         }
         
         list(
-          t_old     = t_old0,   # keep 0-based for diagnostics
+          t_old     = t_old0,
           t_new     = t_new,
           ok        = TRUE,
           mu_mean   = mean(mu_draws[ok_mu]),
@@ -862,165 +896,247 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       
       keep <- vapply(per_arm, function(x) isTRUE(x$ok), logical(1))
       per_arm <- per_arm[keep]
-      if (length(per_arm) == 0L)
-        stop("No valid posterior draws found for overlapping treatments.")
       
-      for (pa in per_arm) {
-        idx <- pa$t_new + 1L  # Stage-2 vector is 1-based in R
-        mu_m_t[idx] <- pa$mu_mean
-        mu_v_t[idx] <- if (is.finite(pa$mu_var)   && pa$mu_var   > 0) pa$mu_var   else NA_real_
-        b_m_t [idx] <- pa$logb_mean
-        b_v_t [idx] <- if (is.finite(pa$logb_var) && pa$logb_var > 0) pa$logb_var else NA_real_
+      if (length(per_arm) == 0L) {
+        stop("No valid posterior draws found for overlapping treatments.")
       }
       
-      # pooled centers/vars across overlaps (for safety fallbacks)
+      for (pa in per_arm) {
+        idx <- pa$t_new + 1L
+        
+        mu_m_t[idx] <- pa$mu_mean
+        mu_v_t[idx] <- if (is.finite(pa$mu_var) && pa$mu_var > 0) {
+          pa$mu_var
+        } else {
+          NA_real_
+        }
+        
+        b_m_t[idx] <- pa$logb_mean
+        b_v_t[idx] <- if (is.finite(pa$logb_var) && pa$logb_var > 0) {
+          pa$logb_var
+        } else {
+          NA_real_
+        }
+      }
+      
+      # Pooled fallbacks from overlapping arms
       mu_means   <- vapply(per_arm, `[[`, numeric(1), "mu_mean")
       mu_vars    <- vapply(per_arm, `[[`, numeric(1), "mu_var")
       logb_means <- vapply(per_arm, `[[`, numeric(1), "logb_mean")
       logb_vars  <- vapply(per_arm, `[[`, numeric(1), "logb_var")
       
-      w_mu   <- ifelse(is.finite(mu_vars)   & mu_vars  > 0, 1/mu_vars, 0)
-      w_logb <- ifelse(is.finite(logb_vars) & logb_vars> 0, 1/logb_vars, 0)
+      w_mu <- ifelse(is.finite(mu_vars) & mu_vars > 0, 1 / mu_vars, 0)
+      w_logb <- ifelse(is.finite(logb_vars) & logb_vars > 0, 1 / logb_vars, 0)
       
-      mu_pool   <- if (sum(w_mu)   > 0) sum(w_mu   * mu_means)   / sum(w_mu)   else mean(mu_means)
-      logb_pool <- if (sum(w_logb) > 0) sum(w_logb * logb_means) / sum(w_logb) else mean(logb_means)
+      mu_pool <- if (sum(w_mu) > 0) {
+        sum(w_mu * mu_means) / sum(w_mu)
+      } else {
+        mean(mu_means)
+      }
       
-      base_mu_v   <- mean(ifelse(is.finite(mu_vars)   & mu_vars  > 0, mu_vars,   NA), na.rm = TRUE)
-      base_logb_v <- mean(ifelse(is.finite(logb_vars) & logb_vars> 0, logb_vars, NA), na.rm = TRUE)
-      base_mu_v   <- if (is.finite(base_mu_v)   && base_mu_v   > 0) base_mu_v   else 1e-6
-      base_logb_v <- if (is.finite(base_logb_v) && base_logb_v > 0) base_logb_v else 1e-6
+      logb_pool <- if (sum(w_logb) > 0) {
+        sum(w_logb * logb_means) / sum(w_logb)
+      } else {
+        mean(logb_means)
+      }
+      
+      base_mu_v <- mean(
+        ifelse(is.finite(mu_vars) & mu_vars > 0, mu_vars, NA),
+        na.rm = TRUE
+      )
+      
+      base_logb_v <- mean(
+        ifelse(is.finite(logb_vars) & logb_vars > 0, logb_vars, NA),
+        na.rm = TRUE
+      )
+      
+      base_mu_v <- if (is.finite(base_mu_v) && base_mu_v > 0) {
+        base_mu_v
+      } else {
+        1e-6
+      }
+      
+      base_logb_v <- if (is.finite(base_logb_v) && base_logb_v > 0) {
+        base_logb_v
+      } else {
+        1e-6
+      }
       
       bad_mu_v <- !is.finite(mu_v_t) | mu_v_t <= 0
       bad_b_v  <- !is.finite(b_v_t)  | b_v_t  <= 0
-      if (any(bad_mu_v)) mu_v_t[bad_mu_v] <- base_mu_v
-      if (any(bad_b_v))  b_v_t [bad_b_v]  <- base_logb_v
       
-      ## --- Control-based caps for β and a floor for Var(log β) ---
-      # (Place this right after base_mu_v/base_logb_v and the bad_* fixes)
-      # Identify control arm in the Stage-2 index space (assumes new index 0 is control)
+      if (any(bad_mu_v)) {
+        mu_v_t[bad_mu_v] <- base_mu_v
+      }
+      
+      if (any(bad_b_v)) {
+        b_v_t[bad_b_v] <- base_logb_v
+      }
+      
+      # ---------- CONTROL-BASED CAPS FOR BETA ----------
       ctl_row <- which(tc$new == 0L)
-      if (length(ctl_row) == 1L && tc$old[ctl_row] >= 0L && tc$old[ctl_row] < T_old) {
-        t_old_ctl <- tc$old[ctl_row] + 1L  # 1-based for H
+      
+      if (length(ctl_row) == 1L &&
+          tc$old[ctl_row] >= 0L &&
+          tc$old[ctl_row] < T_old) {
+        
+        t_old_ctl <- tc$old[ctl_row] + 1L
         ctl_logbeta <- log(as.numeric(H[draw_idx, 2, t_old_ctl]))
         ctl_logbeta <- ctl_logbeta[is.finite(ctl_logbeta)]
+        
         if (length(ctl_logbeta) >= 20L) {
-          ## caps on the NATURAL scale (β), then we convert centers back to log later
-          beta_cap_lo <- as.numeric(quantile(exp(ctl_logbeta), probs = beta_cap_q[1]))
-          beta_cap_hi <- as.numeric(quantile(exp(ctl_logbeta), probs = beta_cap_q[2]))
+          beta_cap_lo <- as.numeric(
+            stats::quantile(exp(ctl_logbeta), probs = beta_cap_q[1])
+          )
+          beta_cap_hi <- as.numeric(
+            stats::quantile(exp(ctl_logbeta), probs = beta_cap_q[2])
+          )
         } else {
-          beta_cap_lo <- exp(logb_pool); beta_cap_hi <- exp(logb_pool)
+          beta_cap_lo <- exp(logb_pool)
+          beta_cap_hi <- exp(logb_pool)
         }
       } else {
-        beta_cap_lo <- exp(logb_pool); beta_cap_hi <- exp(logb_pool)
+        beta_cap_lo <- exp(logb_pool)
+        beta_cap_hi <- exp(logb_pool)
       }
-      ## floor for Var(log β)
+      
       beta_logvar_floor <- max(base_logb_v * beta_var_floor_mult, 1e-6)
       
-      
-      # ---------- UNIQUE (Stage-2-only) arms: Stage-1 recipe built from Stage-2 data ----------
-      # Identify which Stage-2 indices are NOT in overlap
+      # ---------- UNIQUE / STAGE-2-ONLY ARMS ----------
       overlap_new <- vapply(per_arm, `[[`, integer(1), "t_new")
       stage2_only_0b <- setdiff(seq_len(T_new) - 1L, unique(overlap_new))
       
-      # guard: ensure inputs exist
-      if (!all(c("trt","os","os_status") %in% names(input_df)))
-        stop("input_df must contain columns: trt, os, os_status.")
+      # Treatment labels in the uploaded/current dataset
+      arm_levels <- levels(factor(input_df[[trt_col]]))
       
-      # make sure we can map index -> label
-      trt_levels_stage2 <- levels(factor(input_df$trt))
-      if (length(trt_levels_stage2) < T_new) {
-        # allow missing labels if some arms have no current rows; synthesize from mapping if needed
-        trt_levels_stage2 <- unique(c(trt_levels_stage2, ref_trt))
+      if (length(arm_levels) < T_new) {
+        arm_levels <- unique(c(arm_levels, ref_trt))
       }
       
-      # ---------- UNIQUE (Stage-2-only) arms ----------
       if (length(stage2_only_0b)) {
         
-        # Fallback (original Stage-1 recipe) prepared in case EB is off
+        # Original Stage-1 beta recipe fallback
         if (!isTRUE(eb_beta_unique)) {
-          m       <- cc * (a0 - 1)            # target E[β]
+          m <- cc * (a0 - 1)
           b_v_uni <- log1p(s2_beta / m^2)
           b_m_uni <- log(m) - 0.5 * b_v_uni
         }
         
-        arm_levels <- levels(factor(input_df$trt))  # for label lookup
-        
         for (t_new in stage2_only_0b) {
           idx <- t_new + 1L
           
-          ## ----- μ hyper from Stage-2 failures (unchanged logic) -----
-          t_lab <- if (!is.na(arm_levels[idx])) arm_levels[idx] else ref_trt
-          arm_df <- subset(input_df, as.character(trt) == as.character(t_lab) & os_status == 1)
-          
-          if (nrow(arm_df) >= 2L) {
-            mu_m_t[idx] <- mean(log(arm_df$os), na.rm = TRUE)
-            mu_v_t[idx] <- stats::var(log(arm_df$os),  na.rm = TRUE)
-          } else if (nrow(arm_df) == 1L) {
-            mu_m_t[idx] <- log(arm_df$os[1L]); mu_v_t[idx] <- 1e-4
+          t_lab <- if (!is.na(arm_levels[idx])) {
+            arm_levels[idx]
           } else {
-            pool <- subset(input_df, os_status == 1)
-            mu_m_t[idx] <- mean(log(pool$os), na.rm = TRUE)
-            mu_v_t[idx] <- stats::var(log(pool$os),  na.rm = TRUE)
+            ref_trt
           }
-          if (!is.finite(mu_v_t[idx]) || mu_v_t[idx] <= 0) mu_v_t[idx] <- 1e-4
           
-          ## ----- β hyper: tempered EB on log-scale (if eb_beta_unique=TRUE) -----
+          arm_df <- input_df[
+            as.character(input_df[[trt_col]]) == as.character(t_lab) &
+              input_df[[censor_col]] == 1,
+            ,
+            drop = FALSE
+          ]
+          
+          # ----- mu hyperparameters from Stage-2 failures -----
+          if (nrow(arm_df) >= 2L) {
+            mu_m_t[idx] <- mean(log(arm_df[[os_col]]), na.rm = TRUE)
+            mu_v_t[idx] <- stats::var(log(arm_df[[os_col]]), na.rm = TRUE)
+          } else if (nrow(arm_df) == 1L) {
+            mu_m_t[idx] <- log(arm_df[[os_col]][1L])
+            mu_v_t[idx] <- 1e-4
+          } else {
+            pool <- input_df[
+              input_df[[censor_col]] == 1,
+              ,
+              drop = FALSE
+            ]
+            
+            mu_m_t[idx] <- mean(log(pool[[os_col]]), na.rm = TRUE)
+            mu_v_t[idx] <- stats::var(log(pool[[os_col]]), na.rm = TRUE)
+          }
+          
+          if (!is.finite(mu_v_t[idx]) || mu_v_t[idx] <= 0) {
+            mu_v_t[idx] <- 1e-4
+          }
+          
+          # ----- beta hyperparameters -----
           if (isTRUE(eb_beta_unique)) {
             nf <- nrow(arm_df)
             
-            ## data signal for β: variance of log-times among failures in this arm
-            s2_arm <- if (nf >= 2L) stats::var(log(arm_df$os), na.rm = TRUE) else NA_real_
+            s2_arm <- if (nf >= 2L) {
+              stats::var(log(arm_df[[os_col]]), na.rm = TRUE)
+            } else {
+              NA_real_
+            }
             
-            ## EB weight w = n_fail / (n_fail + tau), but require a minimum number of failures
-            w <- if (is.finite(s2_arm) && nf >= min_failures_for_EB) nf / (nf + beta_temper_tau) else 0
+            w <- if (is.finite(s2_arm) && nf >= min_failures_for_EB) {
+              nf / (nf + beta_temper_tau)
+            } else {
+              0
+            }
             
-            ## EB center on log-scale, shrunk to pooled logb_pool
-            logb_EB <- if (is.finite(s2_arm) && s2_arm > 0) log(s2_arm) else logb_pool
+            logb_EB <- if (is.finite(s2_arm) && s2_arm > 0) {
+              log(s2_arm)
+            } else {
+              logb_pool
+            }
+            
             b_m_t[idx] <- w * logb_EB + (1 - w) * logb_pool
             
-            ## clamp β center on NATURAL scale to control-informed band
             beta_center <- exp(b_m_t[idx])
-            if (is.finite(beta_cap_lo) && is.finite(beta_cap_hi) && beta_cap_hi > beta_cap_lo) {
+            
+            if (is.finite(beta_cap_lo) &&
+                is.finite(beta_cap_hi) &&
+                beta_cap_hi > beta_cap_lo) {
               beta_center <- min(max(beta_center, beta_cap_lo), beta_cap_hi)
             }
+            
             b_m_t[idx] <- log(beta_center)
-            
-            ## ensure prior variance on log β doesn't collapse
             b_v_t[idx] <- beta_logvar_floor
-            
           } else {
-            ## original pooled recipe (no EB)
             b_m_t[idx] <- b_m_uni
             b_v_t[idx] <- b_v_uni
           }
         }
       }
       
-      # ---------- Final sanitation ----------
+      # ---------- FINAL SANITATION ----------
       mu_m_t[!is.finite(mu_m_t)] <- mu_pool
-      b_m_t [!is.finite(b_m_t )] <- logb_pool
-      mu_v_t[!is.finite(mu_v_t) | mu_v_t <= 0] <- base_mu_v
-      b_v_t [!is.finite(b_v_t ) | b_v_t  <= 0] <- base_logb_v
+      b_m_t[!is.finite(b_m_t)] <- logb_pool
       
-      stopifnot(length(mu_m_t) == T_new,
-                length(mu_v_t) == T_new,
-                length(b_m_t)  == T_new,
-                length(b_v_t)  == T_new)
+      mu_v_t[!is.finite(mu_v_t) | mu_v_t <= 0] <- base_mu_v
+      b_v_t[!is.finite(b_v_t) | b_v_t <= 0] <- base_logb_v
+      
+      stopifnot(
+        length(mu_m_t) == T_new,
+        length(mu_v_t) == T_new,
+        length(b_m_t)  == T_new,
+        length(b_v_t)  == T_new
+      )
       
       list(
-        mu_m_t = mu_m_t, mu_v_t = mu_v_t,
-        b_m_t  = b_m_t,  b_v_t  = b_v_t,
+        mu_m_t = mu_m_t,
+        mu_v_t = mu_v_t,
+        b_m_t  = b_m_t,
+        b_v_t  = b_v_t,
         diagnostics = list(
           overlap_map = data.frame(
             old = vapply(per_arm, `[[`, integer(1), "t_old"),
             new = vapply(per_arm, `[[`, integer(1), "t_new")
           ),
-          pooled = c(mu_pool = mu_pool, logb_pool = logb_pool,
-                     base_mu_v = base_mu_v, base_logb_v = base_logb_v),
+          pooled = c(
+            mu_pool = mu_pool,
+            logb_pool = logb_pool,
+            base_mu_v = base_mu_v,
+            base_logb_v = base_logb_v
+          ),
           stage2_only = stage2_only_0b,
           arm_role = {
             role <- rep("shared", T_new)
-            if (length(stage2_only_0b)) role[stage2_only_0b + 1L] <- "unique"
+            if (length(stage2_only_0b)) {
+              role[stage2_only_0b + 1L] <- "unique"
+            }
             role
           }
         )
@@ -1033,9 +1149,12 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       trt.convert   = trt.convert,
       T_new         = T_new,
       input_df      = input_df,
-      ref_trt       = "Control",
+      input_specs   = input_specs,
+      ref_trt       = ref_trt,
       use_last_half = TRUE,
-      a0 = a0, cc = cc, s2_beta = 5,
+      a0 = a0,
+      cc = cc,
+      s2_beta = 5,
       eb_beta_unique      = eb_beta_unique,
       beta_temper_tau     = beta_temper_tau,
       beta_cap_q          = beta_cap_q,
@@ -1496,62 +1615,96 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     result_CAPPMx,
     trt.convert,               # 0-based [old, new] mapping
     T_new,                     # number of Stage-2 treatments
-    input_df,                  # Stage-2 dataset with cols: trt, os, os_status
+    input_df,                  # Stage-2 dataset
+    input_specs,               # app-provided column names
     ref_trt = "Control",
     use_last_half = TRUE,
-    a0 = 10.1,                 # used only for Stage-2-unique arms (Stage-1 recipe)
-    cc = 2,                    # used only for Stage-2-unique arms (Stage-1 recipe)
-    s2_beta = 5,                # target Var[beta] used in Stage-1 recipe
+    a0 = 10.1,                 # used only for Stage-2-unique arms
+    cc = 2,                    # used only for Stage-2-unique arms
+    s2_beta = 5,               # target Var[beta] used in Stage-1 recipe
     eb_beta_unique = FALSE,
     beta_temper_tau     = 10,
     beta_cap_q          = c(0.10, 0.90),
     beta_var_floor_mult = 1.0,
     min_failures_for_EB = 3
     ) {
-      if (is.null(result_CAPPMx$Lognormal_hyperparams))
+      if (is.null(result_CAPPMx$Lognormal_hyperparams)) {
         stop("Stage 1 output missing $Lognormal_hyperparams.")
-      H <- result_CAPPMx$Lognormal_hyperparams  # [M x 2 x T_old]; [,1]=mu0_t, [,2]=beta0_t (>0)
-      dH <- dim(H); if (length(dH) != 3L || dH[2] != 2L)
+      }
+      
+      H <- result_CAPPMx$Lognormal_hyperparams  # [M x 2 x T_old]; [,1]=mu0_t, [,2]=beta0_t
+      
+      dH <- dim(H)
+      if (length(dH) != 3L || dH[2] != 2L) {
         stop("$Lognormal_hyperparams must be [M x 2 x T_old].")
-      M <- dH[1]; T_old <- dH[3]
+      }
       
-      # draws to use
-      draw_idx <- if (use_last_half) seq.int(floor(M/2) + 1L, M) else seq_len(M)
+      M <- dH[1]
+      T_old <- dH[3]
       
-      # tidy convert (0-based indices in both columns)
+      # Required column names from input_specs
+      trt_col <- input_specs$trt_type
+      os_col <- input_specs$response
+      censor_col <- input_specs$censor_ind
+      
+      required_model_cols <- c(trt_col, os_col, censor_col)
+      missing_model_cols <- setdiff(required_model_cols, names(input_df))
+      
+      if (length(missing_model_cols) > 0) {
+        stop(
+          "input_df is missing required model-fitting column(s): ",
+          paste(missing_model_cols, collapse = ", ")
+        )
+      }
+      
+      # Draws to use
+      draw_idx <- if (use_last_half) {
+        seq.int(floor(M / 2) + 1L, M)
+      } else {
+        seq_len(M)
+      }
+      
+      # Tidy treatment conversion table
       tc <- as.data.frame(trt.convert)
-      names(tc) <- c("old","new")
+      names(tc) <- c("old", "new")
       tc$new[is.na(tc$new)] <- -1L
       tc <- unique(tc)
       
-      # validate T_new (explicit)
+      # Validate T_new
       stopifnot(length(T_new) == 1L, is.finite(T_new), T_new >= 1L)
       
-      # Pre-alloc (Stage-2 order, 0..T_new-1)
+      # Pre-allocate in Stage-2 treatment order
       mu_m_t <- mu_v_t <- b_m_t <- b_v_t <- rep(NA_real_, T_new)
       
-      # ---------- SHARED (overlap) arms: borrow Stage-1 ----------
-      overlap <- tc[tc$new >= 0L & tc$new < T_new & tc$old >= 0L & tc$old < T_old, , drop = FALSE]
-      if (nrow(overlap) == 0L)
+      # ---------- SHARED / OVERLAPPING ARMS ----------
+      overlap <- tc[
+        tc$new >= 0L & tc$new < T_new &
+          tc$old >= 0L & tc$old < T_old,
+        ,
+        drop = FALSE
+      ]
+      
+      if (nrow(overlap) == 0L) {
         stop("No overlapping treatments between Stage 1 and Stage 2.")
+      }
       
       per_arm <- lapply(seq_len(nrow(overlap)), function(ii) {
-        t_old0 <- overlap$old[ii]               # 0-based (Stage-1)
-        t_new  <- overlap$new[ii]               # 0-based (Stage-2)
-        t_old  <- t_old0 + 1L                   # 1-based for H
+        t_old0 <- overlap$old[ii]   # 0-based Stage-1 index
+        t_new  <- overlap$new[ii]   # 0-based Stage-2 index
+        t_old  <- t_old0 + 1L       # 1-based index for R array
         
         mu_draws   <- as.numeric(H[draw_idx, 1, t_old])
         beta_draws <- as.numeric(H[draw_idx, 2, t_old])
         
         ok_mu <- is.finite(mu_draws)
-        ok_b  <- is.finite(beta_draws) & (beta_draws > 0)
+        ok_b  <- is.finite(beta_draws) & beta_draws > 0
         
         if (!any(ok_mu) || !any(ok_b)) {
           return(list(t_old = t_old0, t_new = t_new, ok = FALSE))
         }
         
         list(
-          t_old     = t_old0,   # keep 0-based for diagnostics
+          t_old     = t_old0,
           t_new     = t_new,
           ok        = TRUE,
           mu_mean   = mean(mu_draws[ok_mu]),
@@ -1563,165 +1716,247 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       
       keep <- vapply(per_arm, function(x) isTRUE(x$ok), logical(1))
       per_arm <- per_arm[keep]
-      if (length(per_arm) == 0L)
-        stop("No valid posterior draws found for overlapping treatments.")
       
-      for (pa in per_arm) {
-        idx <- pa$t_new + 1L  # Stage-2 vector is 1-based in R
-        mu_m_t[idx] <- pa$mu_mean
-        mu_v_t[idx] <- if (is.finite(pa$mu_var)   && pa$mu_var   > 0) pa$mu_var   else NA_real_
-        b_m_t [idx] <- pa$logb_mean
-        b_v_t [idx] <- if (is.finite(pa$logb_var) && pa$logb_var > 0) pa$logb_var else NA_real_
+      if (length(per_arm) == 0L) {
+        stop("No valid posterior draws found for overlapping treatments.")
       }
       
-      # pooled centers/vars across overlaps (for safety fallbacks)
+      for (pa in per_arm) {
+        idx <- pa$t_new + 1L
+        
+        mu_m_t[idx] <- pa$mu_mean
+        mu_v_t[idx] <- if (is.finite(pa$mu_var) && pa$mu_var > 0) {
+          pa$mu_var
+        } else {
+          NA_real_
+        }
+        
+        b_m_t[idx] <- pa$logb_mean
+        b_v_t[idx] <- if (is.finite(pa$logb_var) && pa$logb_var > 0) {
+          pa$logb_var
+        } else {
+          NA_real_
+        }
+      }
+      
+      # Pooled fallbacks from overlapping arms
       mu_means   <- vapply(per_arm, `[[`, numeric(1), "mu_mean")
       mu_vars    <- vapply(per_arm, `[[`, numeric(1), "mu_var")
       logb_means <- vapply(per_arm, `[[`, numeric(1), "logb_mean")
       logb_vars  <- vapply(per_arm, `[[`, numeric(1), "logb_var")
       
-      w_mu   <- ifelse(is.finite(mu_vars)   & mu_vars  > 0, 1/mu_vars, 0)
-      w_logb <- ifelse(is.finite(logb_vars) & logb_vars> 0, 1/logb_vars, 0)
+      w_mu <- ifelse(is.finite(mu_vars) & mu_vars > 0, 1 / mu_vars, 0)
+      w_logb <- ifelse(is.finite(logb_vars) & logb_vars > 0, 1 / logb_vars, 0)
       
-      mu_pool   <- if (sum(w_mu)   > 0) sum(w_mu   * mu_means)   / sum(w_mu)   else mean(mu_means)
-      logb_pool <- if (sum(w_logb) > 0) sum(w_logb * logb_means) / sum(w_logb) else mean(logb_means)
+      mu_pool <- if (sum(w_mu) > 0) {
+        sum(w_mu * mu_means) / sum(w_mu)
+      } else {
+        mean(mu_means)
+      }
       
-      base_mu_v   <- mean(ifelse(is.finite(mu_vars)   & mu_vars  > 0, mu_vars,   NA), na.rm = TRUE)
-      base_logb_v <- mean(ifelse(is.finite(logb_vars) & logb_vars> 0, logb_vars, NA), na.rm = TRUE)
-      base_mu_v   <- if (is.finite(base_mu_v)   && base_mu_v   > 0) base_mu_v   else 1e-6
-      base_logb_v <- if (is.finite(base_logb_v) && base_logb_v > 0) base_logb_v else 1e-6
+      logb_pool <- if (sum(w_logb) > 0) {
+        sum(w_logb * logb_means) / sum(w_logb)
+      } else {
+        mean(logb_means)
+      }
+      
+      base_mu_v <- mean(
+        ifelse(is.finite(mu_vars) & mu_vars > 0, mu_vars, NA),
+        na.rm = TRUE
+      )
+      
+      base_logb_v <- mean(
+        ifelse(is.finite(logb_vars) & logb_vars > 0, logb_vars, NA),
+        na.rm = TRUE
+      )
+      
+      base_mu_v <- if (is.finite(base_mu_v) && base_mu_v > 0) {
+        base_mu_v
+      } else {
+        1e-6
+      }
+      
+      base_logb_v <- if (is.finite(base_logb_v) && base_logb_v > 0) {
+        base_logb_v
+      } else {
+        1e-6
+      }
       
       bad_mu_v <- !is.finite(mu_v_t) | mu_v_t <= 0
       bad_b_v  <- !is.finite(b_v_t)  | b_v_t  <= 0
-      if (any(bad_mu_v)) mu_v_t[bad_mu_v] <- base_mu_v
-      if (any(bad_b_v))  b_v_t [bad_b_v]  <- base_logb_v
       
-      ## --- Control-based caps for β and a floor for Var(log β) ---
-      # (Place this right after base_mu_v/base_logb_v and the bad_* fixes)
-      # Identify control arm in the Stage-2 index space (assumes new index 0 is control)
+      if (any(bad_mu_v)) {
+        mu_v_t[bad_mu_v] <- base_mu_v
+      }
+      
+      if (any(bad_b_v)) {
+        b_v_t[bad_b_v] <- base_logb_v
+      }
+      
+      # ---------- CONTROL-BASED CAPS FOR BETA ----------
       ctl_row <- which(tc$new == 0L)
-      if (length(ctl_row) == 1L && tc$old[ctl_row] >= 0L && tc$old[ctl_row] < T_old) {
-        t_old_ctl <- tc$old[ctl_row] + 1L  # 1-based for H
+      
+      if (length(ctl_row) == 1L &&
+          tc$old[ctl_row] >= 0L &&
+          tc$old[ctl_row] < T_old) {
+        
+        t_old_ctl <- tc$old[ctl_row] + 1L
         ctl_logbeta <- log(as.numeric(H[draw_idx, 2, t_old_ctl]))
         ctl_logbeta <- ctl_logbeta[is.finite(ctl_logbeta)]
+        
         if (length(ctl_logbeta) >= 20L) {
-          ## caps on the NATURAL scale (β), then we convert centers back to log later
-          beta_cap_lo <- as.numeric(quantile(exp(ctl_logbeta), probs = beta_cap_q[1]))
-          beta_cap_hi <- as.numeric(quantile(exp(ctl_logbeta), probs = beta_cap_q[2]))
+          beta_cap_lo <- as.numeric(
+            stats::quantile(exp(ctl_logbeta), probs = beta_cap_q[1])
+          )
+          beta_cap_hi <- as.numeric(
+            stats::quantile(exp(ctl_logbeta), probs = beta_cap_q[2])
+          )
         } else {
-          beta_cap_lo <- exp(logb_pool); beta_cap_hi <- exp(logb_pool)
+          beta_cap_lo <- exp(logb_pool)
+          beta_cap_hi <- exp(logb_pool)
         }
       } else {
-        beta_cap_lo <- exp(logb_pool); beta_cap_hi <- exp(logb_pool)
+        beta_cap_lo <- exp(logb_pool)
+        beta_cap_hi <- exp(logb_pool)
       }
-      ## floor for Var(log β)
+      
       beta_logvar_floor <- max(base_logb_v * beta_var_floor_mult, 1e-6)
       
-      
-      # ---------- UNIQUE (Stage-2-only) arms: Stage-1 recipe built from Stage-2 data ----------
-      # Identify which Stage-2 indices are NOT in overlap
+      # ---------- UNIQUE / STAGE-2-ONLY ARMS ----------
       overlap_new <- vapply(per_arm, `[[`, integer(1), "t_new")
       stage2_only_0b <- setdiff(seq_len(T_new) - 1L, unique(overlap_new))
       
-      # guard: ensure inputs exist
-      if (!all(c("trt","os","os_status") %in% names(input_df)))
-        stop("input_df must contain columns: trt, os, os_status.")
+      # Treatment labels in the uploaded/current dataset
+      arm_levels <- levels(factor(input_df[[trt_col]]))
       
-      # make sure we can map index -> label
-      trt_levels_stage2 <- levels(factor(input_df$trt))
-      if (length(trt_levels_stage2) < T_new) {
-        # allow missing labels if some arms have no current rows; synthesize from mapping if needed
-        trt_levels_stage2 <- unique(c(trt_levels_stage2, ref_trt))
+      if (length(arm_levels) < T_new) {
+        arm_levels <- unique(c(arm_levels, ref_trt))
       }
       
-      # ---------- UNIQUE (Stage-2-only) arms ----------
       if (length(stage2_only_0b)) {
         
-        # Fallback (original Stage-1 recipe) prepared in case EB is off
+        # Original Stage-1 beta recipe fallback
         if (!isTRUE(eb_beta_unique)) {
-          m       <- cc * (a0 - 1)            # target E[β]
+          m <- cc * (a0 - 1)
           b_v_uni <- log1p(s2_beta / m^2)
           b_m_uni <- log(m) - 0.5 * b_v_uni
         }
         
-        arm_levels <- levels(factor(input_df$trt))  # for label lookup
-        
         for (t_new in stage2_only_0b) {
           idx <- t_new + 1L
           
-          ## ----- μ hyper from Stage-2 failures (unchanged logic) -----
-          t_lab <- if (!is.na(arm_levels[idx])) arm_levels[idx] else ref_trt
-          arm_df <- subset(input_df, as.character(trt) == as.character(t_lab) & os_status == 1)
-          
-          if (nrow(arm_df) >= 2L) {
-            mu_m_t[idx] <- mean(log(arm_df$os), na.rm = TRUE)
-            mu_v_t[idx] <- stats::var(log(arm_df$os),  na.rm = TRUE)
-          } else if (nrow(arm_df) == 1L) {
-            mu_m_t[idx] <- log(arm_df$os[1L]); mu_v_t[idx] <- 1e-4
+          t_lab <- if (!is.na(arm_levels[idx])) {
+            arm_levels[idx]
           } else {
-            pool <- subset(input_df, os_status == 1)
-            mu_m_t[idx] <- mean(log(pool$os), na.rm = TRUE)
-            mu_v_t[idx] <- stats::var(log(pool$os),  na.rm = TRUE)
+            ref_trt
           }
-          if (!is.finite(mu_v_t[idx]) || mu_v_t[idx] <= 0) mu_v_t[idx] <- 1e-4
           
-          ## ----- β hyper: tempered EB on log-scale (if eb_beta_unique=TRUE) -----
+          arm_df <- input_df[
+            as.character(input_df[[trt_col]]) == as.character(t_lab) &
+              input_df[[censor_col]] == 1,
+            ,
+            drop = FALSE
+          ]
+          
+          # ----- mu hyperparameters from Stage-2 failures -----
+          if (nrow(arm_df) >= 2L) {
+            mu_m_t[idx] <- mean(log(arm_df[[os_col]]), na.rm = TRUE)
+            mu_v_t[idx] <- stats::var(log(arm_df[[os_col]]), na.rm = TRUE)
+          } else if (nrow(arm_df) == 1L) {
+            mu_m_t[idx] <- log(arm_df[[os_col]][1L])
+            mu_v_t[idx] <- 1e-4
+          } else {
+            pool <- input_df[
+              input_df[[censor_col]] == 1,
+              ,
+              drop = FALSE
+            ]
+            
+            mu_m_t[idx] <- mean(log(pool[[os_col]]), na.rm = TRUE)
+            mu_v_t[idx] <- stats::var(log(pool[[os_col]]), na.rm = TRUE)
+          }
+          
+          if (!is.finite(mu_v_t[idx]) || mu_v_t[idx] <= 0) {
+            mu_v_t[idx] <- 1e-4
+          }
+          
+          # ----- beta hyperparameters -----
           if (isTRUE(eb_beta_unique)) {
             nf <- nrow(arm_df)
             
-            ## data signal for β: variance of log-times among failures in this arm
-            s2_arm <- if (nf >= 2L) stats::var(log(arm_df$os), na.rm = TRUE) else NA_real_
+            s2_arm <- if (nf >= 2L) {
+              stats::var(log(arm_df[[os_col]]), na.rm = TRUE)
+            } else {
+              NA_real_
+            }
             
-            ## EB weight w = n_fail / (n_fail + tau), but require a minimum number of failures
-            w <- if (is.finite(s2_arm) && nf >= min_failures_for_EB) nf / (nf + beta_temper_tau) else 0
+            w <- if (is.finite(s2_arm) && nf >= min_failures_for_EB) {
+              nf / (nf + beta_temper_tau)
+            } else {
+              0
+            }
             
-            ## EB center on log-scale, shrunk to pooled logb_pool
-            logb_EB <- if (is.finite(s2_arm) && s2_arm > 0) log(s2_arm) else logb_pool
+            logb_EB <- if (is.finite(s2_arm) && s2_arm > 0) {
+              log(s2_arm)
+            } else {
+              logb_pool
+            }
+            
             b_m_t[idx] <- w * logb_EB + (1 - w) * logb_pool
             
-            ## clamp β center on NATURAL scale to control-informed band
             beta_center <- exp(b_m_t[idx])
-            if (is.finite(beta_cap_lo) && is.finite(beta_cap_hi) && beta_cap_hi > beta_cap_lo) {
+            
+            if (is.finite(beta_cap_lo) &&
+                is.finite(beta_cap_hi) &&
+                beta_cap_hi > beta_cap_lo) {
               beta_center <- min(max(beta_center, beta_cap_lo), beta_cap_hi)
             }
+            
             b_m_t[idx] <- log(beta_center)
-            
-            ## ensure prior variance on log β doesn't collapse
             b_v_t[idx] <- beta_logvar_floor
-            
           } else {
-            ## original pooled recipe (no EB)
             b_m_t[idx] <- b_m_uni
             b_v_t[idx] <- b_v_uni
           }
         }
       }
       
-      # ---------- Final sanitation ----------
+      # ---------- FINAL SANITATION ----------
       mu_m_t[!is.finite(mu_m_t)] <- mu_pool
-      b_m_t [!is.finite(b_m_t )] <- logb_pool
-      mu_v_t[!is.finite(mu_v_t) | mu_v_t <= 0] <- base_mu_v
-      b_v_t [!is.finite(b_v_t ) | b_v_t  <= 0] <- base_logb_v
+      b_m_t[!is.finite(b_m_t)] <- logb_pool
       
-      stopifnot(length(mu_m_t) == T_new,
-                length(mu_v_t) == T_new,
-                length(b_m_t)  == T_new,
-                length(b_v_t)  == T_new)
+      mu_v_t[!is.finite(mu_v_t) | mu_v_t <= 0] <- base_mu_v
+      b_v_t[!is.finite(b_v_t) | b_v_t <= 0] <- base_logb_v
+      
+      stopifnot(
+        length(mu_m_t) == T_new,
+        length(mu_v_t) == T_new,
+        length(b_m_t)  == T_new,
+        length(b_v_t)  == T_new
+      )
       
       list(
-        mu_m_t = mu_m_t, mu_v_t = mu_v_t,
-        b_m_t  = b_m_t,  b_v_t  = b_v_t,
+        mu_m_t = mu_m_t,
+        mu_v_t = mu_v_t,
+        b_m_t  = b_m_t,
+        b_v_t  = b_v_t,
         diagnostics = list(
           overlap_map = data.frame(
             old = vapply(per_arm, `[[`, integer(1), "t_old"),
             new = vapply(per_arm, `[[`, integer(1), "t_new")
           ),
-          pooled = c(mu_pool = mu_pool, logb_pool = logb_pool,
-                     base_mu_v = base_mu_v, base_logb_v = base_logb_v),
+          pooled = c(
+            mu_pool = mu_pool,
+            logb_pool = logb_pool,
+            base_mu_v = base_mu_v,
+            base_logb_v = base_logb_v
+          ),
           stage2_only = stage2_only_0b,
           arm_role = {
             role <- rep("shared", T_new)
-            if (length(stage2_only_0b)) role[stage2_only_0b + 1L] <- "unique"
+            if (length(stage2_only_0b)) {
+              role[stage2_only_0b + 1L] <- "unique"
+            }
             role
           }
         )
@@ -1734,9 +1969,12 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       trt.convert   = trt.convert,
       T_new         = T_new,
       input_df      = input_df,
-      ref_trt       = "Control",
+      input_specs   = input_specs,
+      ref_trt       = ref_trt,
       use_last_half = TRUE,
-      a0 = a0, cc = cc, s2_beta = 5,
+      a0 = a0,
+      cc = cc,
+      s2_beta = 5,
       eb_beta_unique      = eb_beta_unique,
       beta_temper_tau     = beta_temper_tau,
       beta_cap_q          = beta_cap_q,

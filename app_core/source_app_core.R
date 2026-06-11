@@ -6,11 +6,30 @@
 #   3. app_core/source_app_core.R directly
 
 required_packages <- c(
+  "shiny",
+  "bslib",
+  "tibble",
+  "dplyr",
+  "readr",
+  "ggplot2",
+  "reshape2",
+  "plyr",
+  "foreach",
+  "doParallel",
+  "matrixStats",
+  "DT",
+  "patchwork",
+  "gridExtra",
+  "gt",
+  "writexl",
+  "zip",
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
-  "matrixStats",
-  "mcclust"
+  "purrr",
+  "rstudioapi",
+  "mcclust",
+  "labeling"
 )
 
 missing_packages <- required_packages[

@@ -90,7 +90,7 @@ This app uses a mixture of regular R packages and C++-backed R packages. All lis
 
 ### Step 1: Install system requirements for compiled R packages
 
-Some R packages need compilation. Make sure your system has the usual R build tools installed.
+Most users will receive precompiled CRAN binaries through `install.packages()`, but the system requirements below are useful when R attempts to compile packages from source. Make sure your system has the usual R build tools installed.
 
 #### macOS
 
@@ -99,6 +99,27 @@ Install Xcode command line tools by running this in Terminal:
 ```bash
 xcode-select --install
 ```
+
+On Apple Silicon Macs, such as M1, M2, M3, or M4 machines, some R packages may also require GNU Fortran if R tries to compile packages from source. This can show up as installation errors mentioning gfortran, Fortran, or ld: library not found for -lgfortran.
+
+If that happens, install the GNU Fortran tools recommended for R from:
+
+```text
+https://mac.r-project.org/tools/
+```
+
+After installing GNU Fortran, restart RStudio and rerun the R package installation commands below.
+
+You can check whether gfortran is visible by running this in Terminal:
+
+```bash
+which gfortran
+gfortran --version
+```
+
+If these commands do not find gfortran, R may not be able to compile packages that require Fortran code.
+
+Note: The GNU Fortran issue is a general macOS/R package installation issue that may occur when CRAN packages need to be compiled locally.
 
 #### Ubuntu/Debian Linux
 

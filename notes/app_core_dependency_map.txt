@@ -56,6 +56,10 @@ Additional user-facing analysis utilities:
 
 These functions are not used directly by the Shiny app, but are included under analysis_utils/ so users can compute posterior probabilities manually from Bayesian-ECD result objects.
 
+Apple Silicon Mac installation note:
+The app-core C++ source no longer requires RcppGSL, GSL, or OpenMP. However, some CRAN package installations on Apple Silicon macOS may still require the standard R macOS build toolchain if R attempts to compile packages from source. Users who encounter gfortran or Fortran-related installation errors should install the official R for macOS GNU Fortran tools from https://mac.r-project.org/tools/ and restart R/RStudio before reinstalling packages.
+
+
 CRAN/package dependencies:
 
 * shiny
