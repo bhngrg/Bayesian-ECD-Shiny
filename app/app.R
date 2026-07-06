@@ -81,7 +81,7 @@ ui <- navset_bar(
         
         helpText("Name of the column containing the censoring indicator"),
         helpText(tags$ul(
-          tags$li("If the patient is alive at the end of follow-up, this value is TRUE; otherwise FALSE.")
+          tags$li("Use TRUE if the event/death was observed and FALSE if the patient was censored/alive at last follow-up.")
         )),
         textInput("censor_ind", "Censoring Indicator: ", value = NULL),
         
@@ -1264,74 +1264,6 @@ server <- function(input, output, session) {
       
       stop(e)
     })
-  })
-  
-  output$control_compatibility_summary <- renderDT({
-    validate(
-      need(
-        !is.null(control_compatibility_result()),
-        "Click 'Run compatibility check' in the sidebar to generate the median compatibility summary."
-      )
-    )
-    
-    showNotification(
-      "Compatibility summary is ready.",
-      type = "message",
-      duration = 3
-    )
-    
-    summary_df <- control_compatibility_result()$summary
-    
-    summary_df$observed_km_median <- ifelse(
-      is.na(summary_df$observed_km_median),
-      "Not reached",
-      as.character(round(summary_df$observed_km_median, 2))
-    )
-    
-    summary_df$posterior_predictive_median_q025 <- round(
-      summary_df$posterior_predictive_median_q025,
-      2
-    )
-    summary_df$posterior_predictive_median_q500 <- round(
-      summary_df$posterior_predictive_median_q500,
-      2
-    )
-    summary_df$posterior_predictive_median_q975 <- round(
-      summary_df$posterior_predictive_median_q975,
-      2
-    )
-    
-    summary_df$compatibility_result <- ifelse(
-      summary_df$observed_km_median == "Not reached",
-      "Observed KM median not reached; review curve-level agreement",
-      ifelse(
-        summary_df$compatible,
-        "Compatible with historical posterior predictive control distribution",
-        "Potential incompatibility detected"
-      )
-    )
-    
-    summary_df$compatible <- NULL
-    
-    names(summary_df) <- c(
-      "Control Label",
-      "Control N",
-      "Evaluable Control N",
-      "Observed KM Median",
-      "Predictive Median 2.5%",
-      "Predictive Median 50%",
-      "Predictive Median 97.5%",
-      "Compatibility Result"
-    )
-    
-    datatable(
-      summary_df,
-      rownames = FALSE,
-      options = list(
-        dom = "t",
-        pageLength = 1
-      )
-    )
   })
   
   output$control_compatibility_plot <- renderPlot({
