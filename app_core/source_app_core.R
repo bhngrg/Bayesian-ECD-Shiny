@@ -29,7 +29,8 @@ required_packages <- c(
   "purrr",
   "rstudioapi",
   "mcclust",
-  "labeling"
+  "labeling",
+  "survival"
 )
 
 missing_packages <- required_packages[
@@ -117,3 +118,4 @@ source(file.path(app_core_dir, "cappmx-extend-approx-fit.R"))
 source(file.path(app_core_dir, "plotting.R"))
 source(file.path(app_core_dir, "rmst-utils.R"))
 source(file.path(app_core_dir, "subgroup-analysis.R"))
+source(file.path(app_core_dir, "control-compatibility-check.R"))

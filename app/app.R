@@ -151,6 +151,65 @@ ui <- navset_bar(
     )
   ),
   
+  # Optional concurrent-control compatibility diagnostic
+  nav_panel(
+    title = "Control Compatibility",
+    layout_sidebar(
+      helpText(
+        "Optional concurrent-control compatibility diagnostic. This check is available when the uploaded dataset contains a concurrent control arm. If your uploaded dataset does not include a concurrent control arm, you can still continue with the Bayesian-ECD analysis using the other tabs."
+      ),
+      sidebar = sidebar(
+        width = 320,
+        helpText(
+          "The concurrent control arm is assumed to be labeled exactly as: Control"
+        ),
+        numericInput(
+          "compat_min_time",
+          "Minimum time for plot:",
+          value = 150,
+          min = 1,
+          max = 2000
+        ),
+        numericInput(
+          "compat_max_time",
+          "Maximum time for plot:",
+          value = 1200,
+          min = 10,
+          max = 2500
+        ),
+        helpText("Set a specific width and/or height when downloading the plot. If not specified, the download button will use the default plot size."),
+        numericInput(
+          "compat_width",
+          "Width (inches):",
+          value = NA,
+          min = 1,
+          max = 50
+        ),
+        numericInput(
+          "compat_height",
+          "Height (inches):",
+          value = NA,
+          min = 1,
+          max = 50
+        ),
+        submitButton("Run compatibility check")
+      ),
+      div(
+        style = "width: 100%;",
+        h4("Optional concurrent-control compatibility diagnostic"),
+        uiOutput("control_compatibility_status"),
+        br(),
+        plotOutput("control_compatibility_plot", height = "760px"),
+        br(),
+        downloadButton(
+          "downloadControlCompatibilityPlot",
+          "Download Compatibility Plot (.png)",
+          style = "width: 100%;"
+        )
+      )
+    )
+  ),
+  
   # Panel with plots
   nav_panel(
     title = "Plot Output",
@@ -186,8 +245,8 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(plotOutput("plot", height = "720px")),
-      downloadButton("downloadresults", "Download Bayesian-ECD Results (.zip)"),
-      downloadButton("downloadplot", "Download Plot (.png)")
+      downloadButton("downloadresults", "Download Bayesian-ECD Results (.zip)", style = "width: 100%;"),
+      downloadButton("downloadplot", "Download Plot (.png)", style = "width: 100%;")
     )
   ),
   
@@ -222,7 +281,7 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(plotOutput("rmst_plot", height = "760px")),
-      downloadButton("downloadrmstplot", "Download RMST Plot (.png)")
+      downloadButton("downloadrmstplot", "Download RMST Plot (.png)", style = "width: 100%;")
     )
   ),
   
@@ -294,7 +353,7 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(plotOutput("subgroup_plot", height = "720px")),
-      downloadButton("downloadsubgroupplot", "Download Plot (.png)")
+      downloadButton("downloadsubgroupplot", "Download Plot (.png)", style = "width: 100%;")
     )
   ),
   
@@ -315,7 +374,7 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(DTOutput("subgroup_rmst_table")),
-      downloadButton("downloadRMSTtable", "Download RMST Table (.csv)")
+      downloadButton("downloadRMSTtable", "Download RMST Table (.csv)", style = "width: 100%;")
     )
   ),
   
@@ -425,7 +484,7 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(plotOutput("pred_plot", height = "720px")),
-      downloadButton("downloadpredplot", "Download Prediction Plot (.png)")
+      downloadButton("downloadpredplot", "Download Prediction Plot (.png)", style = "width: 100%;")
     )
   ),
   
@@ -446,7 +505,7 @@ ui <- navset_bar(
         submitButton("Submit")
       ),
       page_fillable(DTOutput("pred_rmst_table")),
-      downloadButton("downloadPredRMSTtable", "Download Prediction RMST Table (.csv)")
+      downloadButton("downloadPredRMSTtable", "Download Prediction RMST Table (.csv)", style = "width: 100%;")
     )
   )
 )
@@ -459,6 +518,58 @@ server <- function(input, output, session) {
     gc()
     stopApp()
   })
+  
+  make_rmst_combined_plot <- function(
+      RMST_store,
+      cntrl,
+      trt,
+      horizon_time
+  ) {
+    tmp1 <- RMST_store$RMST
+    tmp2 <- RMST_store$Difference
+    tmp2$`Difference (Days)` <- round(tmp2$`Difference (Days)`, 2)
+    tmp3 <- RMST_store$Ratio
+    tmp3$Ratio <- round(tmp3$Ratio, 2)
+    
+    p.trt <- RMST_store$p.surv.trt +
+      annotate(
+        "text",
+        x = horizon_time / 2,
+        y = 0.5,
+        label = paste("RMST:", round(tmp1[1, 2]), "Days"),
+        size = RMST_ANNOTATION_SIZE
+      ) +
+      labs(x = "Time") +
+      theme_bw() +
+      large_rmst_theme
+    
+    p.cntrl <- RMST_store$p.surv.cntrl +
+      annotate(
+        "text",
+        x = horizon_time / 2,
+        y = 0.5,
+        label = paste("RMST:", round(tmp1[2, 2]), "Days"),
+        size = RMST_ANNOTATION_SIZE
+      ) +
+      labs(x = "Time") +
+      theme_bw() +
+      large_rmst_theme
+    
+    ((p.trt + p.cntrl + plot_layout(axis_titles = "collect") &
+        plot_annotation(tag_levels = list(c(trt, cntrl), "1")) &
+        theme(plot.tag = element_text(size = PLOT_TAG_SIZE, face = "bold"))) +
+        tableGrob(
+          t(tmp2),
+          cols = NULL,
+          theme = ttheme_default(base_size = RMST_TABLE_SIZE)
+        ) +
+        tableGrob(
+          t(tmp3),
+          cols = NULL,
+          theme = ttheme_default(base_size = RMST_TABLE_SIZE)
+        )) +
+      plot_layout(heights = c(7, 1))
+  }
   
   input.specs <- reactive({
     req(input$response)
@@ -965,6 +1076,470 @@ server <- function(input, output, session) {
     )
   })
   
+  control_compatibility_has_control <- reactive({
+    if (is.null(input$file1)) {
+      return(FALSE)
+    }
+    
+    if (
+      is.null(input$trt_type) ||
+      input$trt_type == ""
+    ) {
+      return(FALSE)
+    }
+    
+    uploaded_df <- tryCatch(data(), error = function(e) NULL)
+    
+    if (is.null(uploaded_df)) {
+      return(FALSE)
+    }
+    
+    if (!input$trt_type %in% names(uploaded_df)) {
+      return(FALSE)
+    }
+    
+    sum(as.character(uploaded_df[[input$trt_type]]) == "Control") > 0
+  })
+  
+  output$control_compatibility_status <- renderUI({
+    compatibility_error <- control_compatibility_error_store()
+    
+    if (!is.null(compatibility_error)) {
+      return(tags$div(
+        class = "alert alert-danger",
+        paste("Compatibility diagnostic failed:", compatibility_error)
+      ))
+    }
+    
+    if (is.null(input$file1)) {
+      return(tags$div(
+        class = "alert alert-info",
+        "Please upload a dataset in the Uploaded Data tab before running this check. This diagnostic is optional and is only available when the uploaded dataset includes concurrent-control patients."
+      ))
+    }
+    
+    if (is.null(input$trt_type) || input$trt_type == "") {
+      return(tags$div(
+        class = "alert alert-warning",
+        "Please specify the treatment column in the Uploaded Data tab. You can still continue with the Bayesian-ECD analysis using the other tabs."
+      ))
+    }
+    
+    uploaded_df <- tryCatch(data(), error = function(e) NULL)
+    
+    if (is.null(uploaded_df)) {
+      return(tags$div(
+        class = "alert alert-warning",
+        "The uploaded dataset could not be read yet. Please check the Uploaded Data tab. You can still continue with other analyses after the uploaded data are valid."
+      ))
+    }
+    
+    if (!input$trt_type %in% names(uploaded_df)) {
+      return(tags$div(
+        class = "alert alert-warning",
+        "The specified treatment column was not found in the uploaded dataset. You can still continue with the Bayesian-ECD analysis once the uploaded data fields are corrected."
+      ))
+    }
+    
+    control_n <- sum(
+      as.character(uploaded_df[[input$trt_type]]) == "Control"
+    )
+    
+    if (control_n == 0) {
+      return(tags$div(
+        class = "alert alert-warning",
+        paste0(
+          "No concurrent-control patients were found for control label '",
+          "Control",
+          "'. This diagnostic requires a concurrent control arm, but you may still continue with the Bayesian-ECD analysis using the other tabs."
+        )
+      ))
+    }
+    
+    tags$div(
+      class = "alert alert-success",
+      paste0(
+        "Found ",
+        control_n,
+        " uploaded concurrent-control patients. You can run the optional posterior predictive compatibility check."
+      )
+    )
+  })
+  
+  control_compatibility_error_store <- reactiveVal(NULL)
+  
+  control_compatibility_result <- reactive({
+    req(data())
+    req(input.specs())
+    req(input$compat_min_time)
+    req(input$compat_max_time)
+    
+    control_compatibility_error_store(NULL)
+    
+    validate(
+      need(
+        control_compatibility_has_control(),
+        "No concurrent-control patients labeled 'Control' were found. This optional diagnostic is skipped, but you can continue with the Bayesian-ECD analysis using the other tabs."
+      ),
+      need(
+        input$compat_min_time < input$compat_max_time,
+        "Minimum time must be smaller than maximum time."
+      )
+    )
+    
+    time_grid <- seq(
+      from = input$compat_min_time,
+      to = input$compat_max_time,
+      length.out = 201
+    )
+    
+    showNotification(
+      "Starting optional concurrent-control compatibility diagnostic...",
+      type = "message",
+      duration = 5
+    )
+    
+    tryCatch({
+      withProgress(
+        message = "Running optional concurrent-control compatibility diagnostic",
+        detail = "Step 1 of 3: Building the Control-reference Bayesian-ECD model.",
+        value = 0.1, {
+          
+          compatibility_model <- cappmx_extend_approx_fit(
+            result_CAPPMx = result.CAPPMx.base,
+            input_df = data(),
+            input_specs = input.specs(),
+            ref_trt = "Control",
+            del_range_response_1 = c(0.005, 0.02) * 8,
+            del_range_response_2 = c(0.005, 0.02) * 9,
+            del_range_alp1 = c(0.1, 0.3) * 2.8
+          )
+          
+          incProgress(
+            amount = 0.35,
+            detail = "Step 2 of 3: Computing the uploaded-control KM curve."
+          )
+          
+          incProgress(
+            amount = 0.25,
+            detail = "Step 3 of 3: Computing historical posterior predictive survival bands and median interval."
+          )
+          
+          out <- run_control_compatibility_check(
+            result = compatibility_model,
+            uploaded_data = data(),
+            time_col = input.specs()$response,
+            censor_col = input.specs()$censor_ind,
+            trt_col = input.specs()$trt_type,
+            control_label = "Control",
+            time_grid = time_grid,
+            burnin = 200L,
+            n_posterior_draws = 1000L,
+            conf_int = 0.95,
+            seed = 20260706L
+          )
+          
+          incProgress(
+            amount = 0.30,
+            detail = "Compatibility diagnostic complete."
+          )
+          
+          showNotification(
+            "Control compatibility diagnostic is complete.",
+            type = "message",
+            duration = 5
+          )
+          
+          out
+        }
+      )
+    }, error = function(e) {
+      control_compatibility_error_store(conditionMessage(e))
+      
+      showNotification(
+        paste("Compatibility diagnostic failed:", conditionMessage(e)),
+        type = "error",
+        duration = 10
+      )
+      
+      stop(e)
+    })
+  })
+  
+  output$control_compatibility_summary <- renderDT({
+    validate(
+      need(
+        !is.null(control_compatibility_result()),
+        "Click 'Run compatibility check' in the sidebar to generate the median compatibility summary."
+      )
+    )
+    
+    showNotification(
+      "Compatibility summary is ready.",
+      type = "message",
+      duration = 3
+    )
+    
+    summary_df <- control_compatibility_result()$summary
+    
+    summary_df$observed_km_median <- ifelse(
+      is.na(summary_df$observed_km_median),
+      "Not reached",
+      as.character(round(summary_df$observed_km_median, 2))
+    )
+    
+    summary_df$posterior_predictive_median_q025 <- round(
+      summary_df$posterior_predictive_median_q025,
+      2
+    )
+    summary_df$posterior_predictive_median_q500 <- round(
+      summary_df$posterior_predictive_median_q500,
+      2
+    )
+    summary_df$posterior_predictive_median_q975 <- round(
+      summary_df$posterior_predictive_median_q975,
+      2
+    )
+    
+    summary_df$compatibility_result <- ifelse(
+      summary_df$observed_km_median == "Not reached",
+      "Observed KM median not reached; review curve-level agreement",
+      ifelse(
+        summary_df$compatible,
+        "Compatible with historical posterior predictive control distribution",
+        "Potential incompatibility detected"
+      )
+    )
+    
+    summary_df$compatible <- NULL
+    
+    names(summary_df) <- c(
+      "Control Label",
+      "Control N",
+      "Evaluable Control N",
+      "Observed KM Median",
+      "Predictive Median 2.5%",
+      "Predictive Median 50%",
+      "Predictive Median 97.5%",
+      "Compatibility Result"
+    )
+    
+    datatable(
+      summary_df,
+      rownames = FALSE,
+      options = list(
+        dom = "t",
+        pageLength = 1
+      )
+    )
+  })
+  
+  output$control_compatibility_plot <- renderPlot({
+    validate(
+      need(
+        !is.null(control_compatibility_result()),
+        "Click 'Run compatibility check' in the sidebar to generate the compatibility plot."
+      )
+    )
+    
+    compatibility_plot_result <- control_compatibility_result()
+    
+    compatibility_plot_result$plot_data <- compatibility_plot_result$plot_data[
+      compatibility_plot_result$plot_data$time >= input$compat_min_time &
+        compatibility_plot_result$plot_data$time <= input$compat_max_time,
+      ,
+      drop = FALSE
+    ]
+    
+    combined_grob <- make_control_compatibility_combined_grob(
+      compatibility_result = compatibility_plot_result,
+      x_axis_min = 0,
+      x_axis_max = input$compat_max_time + 100,
+      plot_theme = large_plot_theme,
+      table_base_size = 18
+    )
+    
+    grid::grid.draw(combined_grob)
+  })
+  
+  output$downloadControlCompatibilityPlot <- downloadHandler(
+    filename = function() {
+      paste0(
+        "control_compatibility_plot_",
+        format(Sys.time(), "%Y%m%d_%H%M%S"),
+        ".png"
+      )
+    },
+    content = function(file) {
+      req(control_compatibility_result())
+      
+      compatibility_plot_result <- control_compatibility_result()
+      
+      compatibility_plot_result$plot_data <- compatibility_plot_result$plot_data[
+        compatibility_plot_result$plot_data$time >= input$compat_min_time &
+          compatibility_plot_result$plot_data$time <= input$compat_max_time,
+        ,
+        drop = FALSE
+      ]
+      
+      combined_grob <- make_control_compatibility_combined_grob(
+        compatibility_result = compatibility_plot_result,
+        x_axis_min = 0,
+        x_axis_max = input$compat_max_time + 100,
+        plot_theme = large_plot_theme,
+        table_base_size = 18
+      )
+      
+      plot_width <- ifelse(
+        is.na(input$compat_width),
+        14,
+        input$compat_width
+      )
+      
+      plot_height <- ifelse(
+        is.na(input$compat_height),
+        8,
+        input$compat_height
+      )
+      
+      ggplot2::ggsave(
+        filename = file,
+        plot = combined_grob,
+        width = plot_width,
+        height = plot_height,
+        dpi = 300
+      )
+    }
+  )
+  
+  make_main_survival_or_hr_plot <- function(
+      plot_store_result,
+      plot_type,
+      cntrl,
+      trt,
+      min_time,
+      max_time
+  ) {
+    plt <- switch(
+      plot_type,
+      "Survival probabilities vs. Time (Days)" = "Survival",
+      "Hazard Ratio vs. Time (Days)" = "HR"
+    )
+    
+    if (plt == "Survival") {
+      plot_store_result$p.surv +
+        scale_fill_discrete(labels = c(trt, cntrl)) +
+        scale_color_discrete(labels = c(trt, cntrl)) +
+        labs(x = "Time") +
+        theme_bw() +
+        large_plot_theme +
+        scale_x_continuous(limits = c(min_time - 10, max_time + 100))
+    } else {
+      plot_store_result$p.hazarad.ratio.withCI +
+        labs(x = "Time") +
+        theme_bw() +
+        large_plot_theme +
+        scale_x_continuous(limits = c(min_time - 10, max_time + 100))
+    }
+  }
+  
+  
+  make_subgroup_survival_or_hr_plot <- function(
+      subgroup_plot_result,
+      plot_type,
+      cntrl,
+      trt,
+      min_time,
+      max_time,
+      cohort_label = "Subgroup sample size:"
+  ) {
+    plt <- switch(
+      plot_type,
+      "Survival probabilities vs. Time (Days)" = "Survival",
+      "Hazard Ratio vs. Time (Days)" = "HR"
+    )
+    
+    n_subgroup <- length(subgroup_plot_result$subgroup_index)
+    
+    if (plt == "Survival") {
+      subgroup_plot_result$p.surv +
+        scale_fill_discrete(labels = c(trt, cntrl)) +
+        scale_color_discrete(labels = c(trt, cntrl)) +
+        annotate(
+          "text",
+          x = max_time / 1.5,
+          y = max(subgroup_plot_result$surv.data$surv.pred.97.5, na.rm = TRUE) / 1.5,
+          label = paste(cohort_label, n_subgroup),
+          size = SUBGROUP_ANNOTATION_SIZE
+        ) +
+        labs(x = "Time") +
+        theme_bw() +
+        large_plot_theme +
+        scale_x_continuous(limits = c(min_time - 10, max_time + 100))
+    } else {
+      subgroup_plot_result$p.hazarad.ratio.withCI +
+        annotate(
+          "text",
+          x = max_time / 1.5,
+          y = max(subgroup_plot_result$HR.data$HR.pred.97.5, na.rm = TRUE) / 1.5,
+          label = paste(cohort_label, n_subgroup),
+          size = SUBGROUP_ANNOTATION_SIZE
+        ) +
+        labs(x = "Time") +
+        theme_bw() +
+        large_plot_theme +
+        scale_x_continuous(limits = c(min_time - 10, max_time + 100))
+    }
+  }
+  
+  
+  save_plot_with_optional_size <- function(
+      file,
+      plot,
+      width_input,
+      height_input,
+      output_width_px,
+      output_height_px
+  ) {
+    if (is.na(width_input) && is.na(height_input)) {
+      ggsave(
+        file,
+        plot = plot,
+        device = "png",
+        width = as.numeric(output_width_px),
+        height = as.numeric(output_height_px),
+        units = "px",
+        dpi = 96
+      )
+    } else if (!is.na(width_input) && is.na(height_input)) {
+      ggsave(
+        file,
+        plot = plot,
+        device = "png",
+        width = width_input,
+        units = "in"
+      )
+    } else if (is.na(width_input) && !is.na(height_input)) {
+      ggsave(
+        file,
+        plot = plot,
+        device = "png",
+        height = height_input,
+        units = "in"
+      )
+    } else {
+      ggsave(
+        file,
+        plot = plot,
+        device = "png",
+        width = width_input,
+        height = height_input,
+        units = "in"
+      )
+    }
+  }
+  
+  
   output$plot <- renderPlot({
     req(input$ref_treatment_selection)
     req(input$treatment_selection)
@@ -973,30 +1548,36 @@ server <- function(input, output, session) {
       message = "Building the survival/hazard ratio plot",
       detail = "This may take a moment.",
       value = 0, {
-        plt <- switch(
-          input$plot_type,
-          "Survival probabilities vs. Time (Days)" = "Survival",
-          "Hazard Ratio vs. Time (Days)" = "HR"
+        main_plot_result <- plot_store()
+        
+        make_main_survival_or_hr_plot(
+          plot_store_result = main_plot_result,
+          plot_type = input$plot_type,
+          cntrl = input$ref_treatment_selection,
+          trt = input$treatment_selection,
+          min_time = input$min_time,
+          max_time = input$max_time
         )
-        
-        cntrl <- input$ref_treatment_selection
-        trt <- input$treatment_selection
-        
-        if (plt == "Survival") {
-          plot_store()$p.surv +
-            scale_fill_discrete(labels = c(trt, cntrl)) +
-            scale_color_discrete(labels = c(trt, cntrl)) +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$min_time - 10, input$max_time + 100))
-        } else {
-          plot_store()$p.hazarad.ratio.withCI +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$min_time - 10, input$max_time + 100))
-        }
+      }
+    )
+  })
+  
+  rmst_store <- reactive({
+    req(input$ref_treatment_selection1)
+    req(input$treatment_selection1)
+    req(input$horizon_time)
+    
+    withProgress(
+      message = "Building the RMST results",
+      detail = "This may take a moment.",
+      value = 0, {
+        rmst_lognormal(
+          result(),
+          input$ref_treatment_selection1,
+          input$treatment_selection1,
+          input$horizon_time,
+          burnin = 200
+        )
       }
     )
   })
@@ -1009,53 +1590,12 @@ server <- function(input, output, session) {
       message = "Building the RMST plot",
       detail = "This may take a moment.",
       value = 0, {
-        cntrl <- input$ref_treatment_selection1
-        trt <- input$treatment_selection1
-        
-        RMST_store <- rmst_lognormal(
-          result(),
-          cntrl,
-          trt,
-          input$horizon_time,
-          burnin = 200
+        make_rmst_combined_plot(
+          RMST_store = rmst_store(),
+          cntrl = input$ref_treatment_selection1,
+          trt = input$treatment_selection1,
+          horizon_time = input$horizon_time
         )
-        
-        tmp1 <- RMST_store$RMST
-        tmp2 <- RMST_store$Difference
-        tmp2$`Difference (Days)` <- round(tmp2$`Difference (Days)`, 2)
-        tmp3 <- RMST_store$Ratio
-        tmp3$Ratio <- round(tmp3$Ratio, 2)
-        
-        p.trt <- RMST_store$p.surv.trt +
-          annotate(
-            "text",
-            x = input$horizon_time / 2,
-            y = 0.5,
-            label = paste("RMST:", round(tmp1[1, 2]), "Days"),
-            size = RMST_ANNOTATION_SIZE
-          ) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_rmst_theme
-        
-        p.cntrl <- RMST_store$p.surv.cntrl +
-          annotate(
-            "text",
-            x = input$horizon_time / 2,
-            y = 0.5,
-            label = paste("RMST:", round(tmp1[2, 2]), "Days"),
-            size = RMST_ANNOTATION_SIZE
-          ) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_rmst_theme
-        
-        ((p.trt + p.cntrl + plot_layout(axis_titles = "collect") &
-            plot_annotation(tag_levels = list(c(trt, cntrl), "1")) &
-            theme(plot.tag = element_text(size = PLOT_TAG_SIZE, face = "bold"))) +
-            tableGrob(t(tmp2), cols = NULL, theme = ttheme_default(base_size = RMST_TABLE_SIZE)) +
-            tableGrob(t(tmp3), cols = NULL, theme = ttheme_default(base_size = RMST_TABLE_SIZE))) +
-          plot_layout(heights = c(7, 1))
       }
     )
   })
@@ -1068,44 +1608,17 @@ server <- function(input, output, session) {
       message = "Building the subgroup survival/hazard ratio plot",
       detail = "This may take a moment.",
       value = 0, {
-        plt <- switch(
-          input$plot_type1,
-          "Survival probabilities vs. Time (Days)" = "Survival",
-          "Hazard Ratio vs. Time (Days)" = "HR"
+        subgroup_plot_result <- plot_store1()
+        
+        make_subgroup_survival_or_hr_plot(
+          subgroup_plot_result = subgroup_plot_result,
+          plot_type = input$plot_type1,
+          cntrl = input$ref_treatment_selection2,
+          trt = input$treatment_selection2,
+          min_time = input$min_time1,
+          max_time = input$max_time1,
+          cohort_label = "Subgroup sample size:"
         )
-        
-        cntrl <- input$ref_treatment_selection2
-        trt <- input$treatment_selection2
-        
-        if (plt == "Survival") {
-          plot_store1()$p.surv +
-            scale_fill_discrete(labels = c(trt, cntrl)) +
-            scale_color_discrete(labels = c(trt, cntrl)) +
-            annotate(
-              "text",
-              x = input$max_time1 / 1.5,
-              y = max(plot_store1()$surv.data$surv.pred.97.5, na.rm = TRUE) / 1.5,
-              label = paste("Subgroup sample size:", length(plot_store1()$subgroup_index)),
-              size = SUBGROUP_ANNOTATION_SIZE
-            ) +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$min_time1 - 10, input$max_time1 + 100))
-        } else {
-          plot_store1()$p.hazarad.ratio.withCI +
-            annotate(
-              "text",
-              x = input$max_time1 / 1.5,
-              y = max(plot_store1()$HR.data$HR.pred.97.5, na.rm = TRUE) / 1.5,
-              label = paste("Subgroup sample size:", length(plot_store1()$subgroup_index)),
-              size = SUBGROUP_ANNOTATION_SIZE
-            ) +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$min_time1 - 10, input$max_time1 + 100))
-        }
       }
     )
   })
@@ -1118,14 +1631,7 @@ server <- function(input, output, session) {
       message = "Building the prediction survival/hazard ratio plot",
       detail = "This may take a moment.",
       value = 0, {
-        plt <- switch(
-          input$pred_plot_type,
-          "Survival probabilities vs. Time (Days)" = "Survival",
-          "Hazard Ratio vs. Time (Days)" = "HR"
-        )
-        
-        cntrl <- input$pred_ref_treatment_selection
-        trt <- input$pred_treatment_selection
+        prediction_plot_result <- pred_plot_store()
         
         cohort_label <- if (isTRUE(input$pred_use_subgroup)) {
           "Prediction subgroup sample size:"
@@ -1133,35 +1639,15 @@ server <- function(input, output, session) {
           "Prediction sample size:"
         }
         
-        if (plt == "Survival") {
-          pred_plot_store()$p.surv +
-            scale_fill_discrete(labels = c(trt, cntrl)) +
-            scale_color_discrete(labels = c(trt, cntrl)) +
-            annotate(
-              "text",
-              x = input$pred_max_time / 1.5,
-              y = max(pred_plot_store()$surv.data$surv.pred.97.5, na.rm = TRUE) / 1.5,
-              label = paste(cohort_label, length(pred_plot_store()$subgroup_index)),
-              size = SUBGROUP_ANNOTATION_SIZE
-            ) +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$pred_min_time - 10, input$pred_max_time + 100))
-        } else {
-          pred_plot_store()$p.hazarad.ratio.withCI +
-            annotate(
-              "text",
-              x = input$pred_max_time / 1.5,
-              y = max(pred_plot_store()$HR.data$HR.pred.97.5, na.rm = TRUE) / 1.5,
-              label = paste(cohort_label, length(pred_plot_store()$subgroup_index)),
-              size = SUBGROUP_ANNOTATION_SIZE
-            ) +
-            labs(x = "Time") +
-            theme_bw() +
-            large_plot_theme +
-            scale_x_continuous(limits = c(input$pred_min_time - 10, input$pred_max_time + 100))
-        }
+        make_subgroup_survival_or_hr_plot(
+          subgroup_plot_result = prediction_plot_result,
+          plot_type = input$pred_plot_type,
+          cntrl = input$pred_ref_treatment_selection,
+          trt = input$pred_treatment_selection,
+          min_time = input$pred_min_time,
+          max_time = input$pred_max_time,
+          cohort_label = cohort_label
+        )
       }
     )
   })
@@ -1171,159 +1657,76 @@ server <- function(input, output, session) {
       paste0("plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
     },
     content = function(file) {
-      plt <- switch(
-        input$plot_type,
-        "Survival probabilities vs. Time (Days)" = "Survival",
-        "Hazard Ratio vs. Time (Days)" = "HR"
+      main_plot_result <- plot_store()
+      
+      plt_str <- make_main_survival_or_hr_plot(
+        plot_store_result = main_plot_result,
+        plot_type = input$plot_type,
+        cntrl = input$ref_treatment_selection,
+        trt = input$treatment_selection,
+        min_time = input$min_time,
+        max_time = input$max_time
       )
       
-      cntrl <- input$ref_treatment_selection
-      trt <- input$treatment_selection
-      
-      if (plt == "Survival") {
-        plt_str <- plot_store()$p.surv +
-          scale_fill_discrete(labels = c(trt, cntrl)) +
-          scale_color_discrete(labels = c(trt, cntrl)) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$min_time - 10, input$max_time + 100))
-      } else {
-        plt_str <- plot_store()$p.hazarad.ratio.withCI +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$min_time - 10, input$max_time + 100))
-      }
-      
-      if (is.na(input$width) && is.na(input$height)) {
-        plot_width <- as.numeric(session$clientData$output_plot_width)
-        plot_height <- as.numeric(session$clientData$output_plot_height)
-        ggsave(file, plot = plt_str, device = "png", width = plot_width,
-               height = plot_height, units = "px", dpi = 96)
-      } else if (!is.na(input$width) && is.na(input$height)) {
-        ggsave(file, plot = plt_str, device = "png", width = input$width, units = "in")
-      } else if (is.na(input$width) && !is.na(input$height)) {
-        ggsave(file, plot = plt_str, device = "png", height = input$height, units = "in")
-      } else {
-        ggsave(file, plot = plt_str, device = "png",
-               width = input$width, height = input$height, units = "in")
-      }
+      save_plot_with_optional_size(
+        file = file,
+        plot = plt_str,
+        width_input = input$width,
+        height_input = input$height,
+        output_width_px = session$clientData$output_plot_width,
+        output_height_px = session$clientData$output_plot_height
+      )
     }
   )
   
   output$downloadrmstplot <- downloadHandler(
     filename = function() {
-      paste0("plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+      paste0("rmst_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
     },
     content = function(file) {
-      cntrl <- input$ref_treatment_selection1
-      trt <- input$treatment_selection1
-      
-      RMST_store <- rmst_lognormal(
-        result(),
-        cntrl,
-        trt,
-        input$horizon_time,
-        burnin = 200
+      plt_str2 <- make_rmst_combined_plot(
+        RMST_store = rmst_store(),
+        cntrl = input$ref_treatment_selection1,
+        trt = input$treatment_selection1,
+        horizon_time = input$horizon_time
       )
       
-      tmp1 <- RMST_store$RMST
-      tmp2 <- RMST_store$Difference
-      tmp2$`Difference (Days)` <- round(tmp2$`Difference (Days)`, 2)
-      tmp3 <- RMST_store$Ratio
-      tmp3$Ratio <- round(tmp3$Ratio, 2)
-      
-      p.trt <- RMST_store$p.surv.trt +
-        annotate(
-          "text",
-          x = input$horizon_time / 2,
-          y = 0.5,
-          label = paste("RMST:", round(tmp1[1, 2]), "Days"),
-          size = RMST_ANNOTATION_SIZE
-        ) +
-        labs(x = "Time") +
-        theme_bw() +
-        large_rmst_theme
-      
-      p.cntrl <- RMST_store$p.surv.cntrl +
-        annotate(
-          "text",
-          x = input$horizon_time / 2,
-          y = 0.5,
-          label = paste("RMST:", round(tmp1[2, 2]), "Days"),
-          size = RMST_ANNOTATION_SIZE
-        ) +
-        labs(x = "Time") +
-        theme_bw() +
-        large_rmst_theme
-      
-      plt_str2 <- ((p.trt + p.cntrl + plot_layout(axis_titles = "collect") &
-                      plot_annotation(tag_levels = list(c(trt, cntrl), "1")) &
-                      theme(plot.tag = element_text(size = PLOT_TAG_SIZE, face = "bold"))) +
-                     tableGrob(t(tmp2), cols = NULL, theme = ttheme_default(base_size = RMST_TABLE_SIZE)) +
-                     tableGrob(t(tmp3), cols = NULL, theme = ttheme_default(base_size = RMST_TABLE_SIZE))) +
-        plot_layout(heights = c(7, 1))
-      
-      if (is.na(input$width1) && is.na(input$height1)) {
-        plot_width <- as.numeric(session$clientData$output_rmst_plot_width)
-        plot_height <- as.numeric(session$clientData$output_rmst_plot_height)
-        ggsave(file, plot = plt_str2, device = "png", width = plot_width,
-               height = plot_height, units = "px", dpi = 96)
-      } else if (!is.na(input$width1) && is.na(input$height1)) {
-        ggsave(file, plot = plt_str2, device = "png", width = input$width1, units = "in")
-      } else if (is.na(input$width1) && !is.na(input$height1)) {
-        ggsave(file, plot = plt_str2, device = "png", height = input$height1, units = "in")
-      } else {
-        ggsave(file, plot = plt_str2, device = "png",
-               width = input$width1, height = input$height1, units = "in")
-      }
+      save_plot_with_optional_size(
+        file = file,
+        plot = plt_str2,
+        width_input = input$width1,
+        height_input = input$height1,
+        output_width_px = session$clientData$output_rmst_plot_width,
+        output_height_px = session$clientData$output_rmst_plot_height
+      )
     }
   )
   
   output$downloadsubgroupplot <- downloadHandler(
     filename = function() {
-      paste0("plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
+      paste0("subgroup_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
     },
     content = function(file) {
-      plt <- switch(
-        input$plot_type1,
-        "Survival probabilities vs. Time (Days)" = "Survival",
-        "Hazard Ratio vs. Time (Days)" = "HR"
+      subgroup_plot_result <- plot_store1()
+      
+      plt_str1 <- make_subgroup_survival_or_hr_plot(
+        subgroup_plot_result = subgroup_plot_result,
+        plot_type = input$plot_type1,
+        cntrl = input$ref_treatment_selection2,
+        trt = input$treatment_selection2,
+        min_time = input$min_time1,
+        max_time = input$max_time1,
+        cohort_label = "Subgroup sample size:"
       )
       
-      cntrl <- input$ref_treatment_selection2
-      trt <- input$treatment_selection2
-      
-      if (plt == "Survival") {
-        plt_str1 <- plot_store1()$p.surv +
-          scale_fill_discrete(labels = c(trt, cntrl)) +
-          scale_color_discrete(labels = c(trt, cntrl)) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$min_time1 - 10, input$max_time1 + 100))
-      } else {
-        plt_str1 <- plot_store1()$p.hazarad.ratio.withCI +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$min_time1 - 10, input$max_time1 + 100))
-      }
-      
-      if (is.na(input$width2) && is.na(input$height2)) {
-        plot_width <- as.numeric(session$clientData$output_subgroup_plot_width)
-        plot_height <- as.numeric(session$clientData$output_subgroup_plot_height)
-        ggsave(file, plot = plt_str1, device = "png", width = plot_width,
-               height = plot_height, units = "px", dpi = 96)
-      } else if (!is.na(input$width2) && is.na(input$height2)) {
-        ggsave(file, plot = plt_str1, device = "png", width = input$width2, units = "in")
-      } else if (is.na(input$width2) && !is.na(input$height2)) {
-        ggsave(file, plot = plt_str1, device = "png", height = input$height2, units = "in")
-      } else {
-        ggsave(file, plot = plt_str1, device = "png",
-               width = input$width2, height = input$height2, units = "in")
-      }
+      save_plot_with_optional_size(
+        file = file,
+        plot = plt_str1,
+        width_input = input$width2,
+        height_input = input$height2,
+        output_width_px = session$clientData$output_subgroup_plot_width,
+        output_height_px = session$clientData$output_subgroup_plot_height
+      )
     }
   )
   
@@ -1332,14 +1735,7 @@ server <- function(input, output, session) {
       paste0("prediction_plot_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".png")
     },
     content = function(file) {
-      plt <- switch(
-        input$pred_plot_type,
-        "Survival probabilities vs. Time (Days)" = "Survival",
-        "Hazard Ratio vs. Time (Days)" = "HR"
-      )
-      
-      cntrl <- input$pred_ref_treatment_selection
-      trt <- input$pred_treatment_selection
+      prediction_plot_result <- pred_plot_store()
       
       cohort_label <- if (isTRUE(input$pred_use_subgroup)) {
         "Prediction subgroup sample size:"
@@ -1347,49 +1743,24 @@ server <- function(input, output, session) {
         "Prediction sample size:"
       }
       
-      if (plt == "Survival") {
-        plt_str <- pred_plot_store()$p.surv +
-          scale_fill_discrete(labels = c(trt, cntrl)) +
-          scale_color_discrete(labels = c(trt, cntrl)) +
-          annotate(
-            "text",
-            x = input$pred_max_time / 1.5,
-            y = max(pred_plot_store()$surv.data$surv.pred.97.5, na.rm = TRUE) / 1.5,
-            label = paste(cohort_label, length(pred_plot_store()$subgroup_index)),
-            size = SUBGROUP_ANNOTATION_SIZE
-          ) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$pred_min_time - 10, input$pred_max_time + 100))
-      } else {
-        plt_str <- pred_plot_store()$p.hazarad.ratio.withCI +
-          annotate(
-            "text",
-            x = input$pred_max_time / 1.5,
-            y = max(pred_plot_store()$HR.data$HR.pred.97.5, na.rm = TRUE) / 1.5,
-            label = paste(cohort_label, length(pred_plot_store()$subgroup_index)),
-            size = SUBGROUP_ANNOTATION_SIZE
-          ) +
-          labs(x = "Time") +
-          theme_bw() +
-          large_plot_theme +
-          scale_x_continuous(limits = c(input$pred_min_time - 10, input$pred_max_time + 100))
-      }
+      plt_str <- make_subgroup_survival_or_hr_plot(
+        subgroup_plot_result = prediction_plot_result,
+        plot_type = input$pred_plot_type,
+        cntrl = input$pred_ref_treatment_selection,
+        trt = input$pred_treatment_selection,
+        min_time = input$pred_min_time,
+        max_time = input$pred_max_time,
+        cohort_label = cohort_label
+      )
       
-      if (is.na(input$pred_width) && is.na(input$pred_height)) {
-        plot_width <- as.numeric(session$clientData$output_pred_plot_width)
-        plot_height <- as.numeric(session$clientData$output_pred_plot_height)
-        ggsave(file, plot = plt_str, device = "png", width = plot_width,
-               height = plot_height, units = "px", dpi = 96)
-      } else if (!is.na(input$pred_width) && is.na(input$pred_height)) {
-        ggsave(file, plot = plt_str, device = "png", width = input$pred_width, units = "in")
-      } else if (is.na(input$pred_width) && !is.na(input$pred_height)) {
-        ggsave(file, plot = plt_str, device = "png", height = input$pred_height, units = "in")
-      } else {
-        ggsave(file, plot = plt_str, device = "png",
-               width = input$pred_width, height = input$pred_height, units = "in")
-      }
+      save_plot_with_optional_size(
+        file = file,
+        plot = plt_str,
+        width_input = input$pred_width,
+        height_input = input$pred_height,
+        output_width_px = session$clientData$output_pred_plot_width,
+        output_height_px = session$clientData$output_pred_plot_height
+      )
     }
   )
   

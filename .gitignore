@@ -24,3 +24,5 @@ Thumbs.db
 
 # local backup of untouched original development files
 original_files/
+# Local app cleanup backups
+backups/
