@@ -1187,6 +1187,22 @@ server <- function(input, output, session) {
       )
     )
     
+    uploaded_all_df <- data()
+    
+    uploaded_control_df <- uploaded_all_df[
+      as.character(uploaded_all_df[[input.specs()$trt_type]]) == "Control",
+      ,
+      drop = FALSE
+    ]
+    
+    
+    validate(
+      need(
+        nrow(uploaded_control_df) > 0,
+        "No concurrent-control patients labeled 'Control' were found. This optional diagnostic is skipped, but you can continue with the Bayesian-ECD analysis using the other tabs."
+      )
+    )
+    
     time_grid <- seq(
       from = input$compat_min_time,
       to = input$compat_max_time,
@@ -1207,7 +1223,7 @@ server <- function(input, output, session) {
           
           compatibility_model <- cappmx_extend_approx_fit(
             result_CAPPMx = result.CAPPMx.base,
-            input_df = data(),
+            input_df = uploaded_control_df,
             input_specs = input.specs(),
             ref_trt = "Control",
             del_range_response_1 = c(0.005, 0.02) * 8,
@@ -1227,7 +1243,7 @@ server <- function(input, output, session) {
           
           out <- run_control_compatibility_check(
             result = compatibility_model,
-            uploaded_data = data(),
+            uploaded_data = uploaded_control_df,
             time_col = input.specs()$response,
             censor_col = input.specs()$censor_ind,
             trt_col = input.specs()$trt_type,
