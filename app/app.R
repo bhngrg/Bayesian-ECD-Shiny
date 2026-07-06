@@ -1218,18 +1218,10 @@ server <- function(input, output, session) {
     tryCatch({
       withProgress(
         message = "Running optional concurrent-control compatibility diagnostic",
-        detail = "Step 1 of 3: Building the Control-reference Bayesian-ECD model.",
+        detail = "Step 1 of 3: Loading the stored historical Bayesian-ECD posterior.",
         value = 0.1, {
           
-          compatibility_model <- cappmx_extend_approx_fit(
-            result_CAPPMx = result.CAPPMx.base,
-            input_df = uploaded_control_df,
-            input_specs = input.specs(),
-            ref_trt = "Control",
-            del_range_response_1 = c(0.005, 0.02) * 8,
-            del_range_response_2 = c(0.005, 0.02) * 9,
-            del_range_alp1 = c(0.1, 0.3) * 2.8
-          )
+          compatibility_model <- result.CAPPMx.base
           
           incProgress(
             amount = 0.35,
@@ -1238,7 +1230,7 @@ server <- function(input, output, session) {
           
           incProgress(
             amount = 0.25,
-            detail = "Step 3 of 3: Computing historical posterior predictive survival bands and median interval."
+            detail = "Step 3 of 3: Computing historical posterior predictive survival bands and median interval for the uploaded concurrent-control covariate population."
           )
           
           out <- run_control_compatibility_check(
