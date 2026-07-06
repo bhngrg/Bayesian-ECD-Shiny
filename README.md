@@ -277,7 +277,31 @@ The model-fitting dataset should contain:
 - cohort/source indicator
 - covariates used for modeling, such as age, sex, KPS, and extent of resection
 
-### 2. View model outputs
+### 2. Optional control compatibility diagnostic
+
+After uploading the model-fitting dataset, the app includes an optional **Control Compatibility** tab.
+
+This tab is intended for datasets that include a concurrent control arm. The control treatment value is assumed to be labeled exactly as:
+
+```text
+Control
+```
+
+The diagnostic compares the observed concurrent-control survival experience with the historical Bayesian-ECD posterior predictive control distribution.
+
+Specifically:
+
+- the observed Kaplan-Meier curve and observed KM median are computed using only uploaded patients whose treatment value is `Control`;
+- the posterior predictive control curve and posterior predictive sample-median interval are generated from the stored historical Bayesian-ECD posterior;
+- the uploaded concurrent-control covariates are used as the prediction target population;
+- uploaded experimental-arm patients, such as `Drug A` or `Drug N`, are excluded from this diagnostic;
+- no Stage 2 Bayesian-ECD model extension is performed for this compatibility check.
+
+The diagnostic reports whether the observed concurrent-control KM median falls within the central 95% posterior predictive interval for the historical predictive control-arm sample median. This provides a visual and numerical check of whether the external/historical controls appear compatible with the concurrent RCT controls before interpreting the main Bayesian-ECD analysis.
+
+This tab is optional. If the uploaded dataset does not contain a concurrent control arm labeled `Control`, the app will display a message and the user can continue with the other Bayesian-ECD analysis tabs.
+
+### 3. View model outputs
 
 Use the following tabs:
 
@@ -286,7 +310,7 @@ Use the following tabs:
 - **Subgroup Analysis**
 - **Subgroup RMST Output**
 
-### 3. Upload prediction data
+### 4. Upload prediction data
 
 Use the example prediction dataset in:
 
@@ -301,7 +325,7 @@ The prediction dataset should contain:
 
 It does not need outcome, censoring, treatment, or cohort/source columns.
 
-### 4. View prediction outputs
+### 5. View prediction outputs
 
 Use the following tabs:
 
@@ -350,7 +374,6 @@ Parallel computations use `foreach`, `doParallel`, and `parallel::makeCluster()`
 
 R-level density and survival helper functions use `matrixStats::logSumExp()` rather than the Rcpp `log_sum_exp()` function inside parallel workers to avoid external-pointer issues.
 
-The app no longer requires `RcppGSL`, which avoids operating-system-specific GSL installation issues.
 
 ## Development notes
 
