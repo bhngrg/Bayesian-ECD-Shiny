@@ -134,13 +134,47 @@ posterior_prob_hr_lt <- function(result,
         x <- input_df[[v]]
         
         ## interpret subgroup specification on the underlying factor/integer codes
-        if (is.factor(x)) {
-          x_code <- as.integer(x) - 1L
+        if (is.factor(x) || is.character(x)) {
+
+          if (is.null(result$Cat_Levels) || !v %in% names(result$Cat_Levels)) {
+            stop(
+              "Stored categorical levels were not found for variable ",
+              v,
+              "."
+            )
+          }
+
+          expected_levels <- result$Cat_Levels[[v]]
+
+          f <- factor(
+            as.character(x),
+            levels = expected_levels
+          )
+
+          if (any(is.na(f) & !is.na(x))) {
+            unseen <- unique(as.character(x)[is.na(f) & !is.na(x)])
+
+            stop(
+              "Unseen categorical level(s) for ",
+              v,
+              ": ",
+              paste(unseen, collapse = ", ")
+            )
+          }
+
+          x_code <- as.integer(f) - 1L
+
         } else if (is.numeric(x) || is.integer(x)) {
+
           x_code <- as.integer(x)
+
         } else {
-          stop("Categorical subpopulation variable ", v,
-               " must be stored as factor, integer, or numeric.")
+
+          stop(
+            "Categorical subpopulation variable ",
+            v,
+            " must be factor, character, integer, or numeric."
+          )
         }
         
         which(x_code %in% lev_codes)
@@ -413,13 +447,47 @@ posterior_prob_rmst <- function(result,
         
         x <- input_df[[v]]
         
-        if (is.factor(x)) {
-          x_code <- as.integer(x) - 1L
+        if (is.factor(x) || is.character(x)) {
+
+          if (is.null(result$Cat_Levels) || !v %in% names(result$Cat_Levels)) {
+            stop(
+              "Stored categorical levels were not found for variable ",
+              v,
+              "."
+            )
+          }
+
+          expected_levels <- result$Cat_Levels[[v]]
+
+          f <- factor(
+            as.character(x),
+            levels = expected_levels
+          )
+
+          if (any(is.na(f) & !is.na(x))) {
+            unseen <- unique(as.character(x)[is.na(f) & !is.na(x)])
+
+            stop(
+              "Unseen categorical level(s) for ",
+              v,
+              ": ",
+              paste(unseen, collapse = ", ")
+            )
+          }
+
+          x_code <- as.integer(f) - 1L
+
         } else if (is.numeric(x) || is.integer(x)) {
+
           x_code <- as.integer(x)
+
         } else {
-          stop("Categorical subpopulation variable ", v,
-               " must be stored as factor, integer, or numeric.")
+
+          stop(
+            "Categorical subpopulation variable ",
+            v,
+            " must be factor, character, integer, or numeric."
+          )
         }
         
         which(x_code %in% lev_codes)

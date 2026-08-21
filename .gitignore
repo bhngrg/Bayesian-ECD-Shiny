@@ -26,3 +26,11 @@ Thumbs.db
 original_files/
 # Local app cleanup backups
 backups/
+
+# local development notes
+notes/
+
+# generated user-guide files
+docs/Bayesian-ECD-Shiny-User-Guide.html
+docs/Bayesian-ECD-Shiny-User-Guide_files/
+docs/figures/

@@ -2,8 +2,7 @@ load_stored_mcmc <- function(path = NULL) {
   candidate_paths <- c(
     path,
     "data/storedMCMCiter",
-    "cappmx_package_prep/app/data/storedMCMCiter",
-    "/Users/bhanugarg/cappmx_package_prep/app/data/storedMCMCiter"
+    "app/data/storedMCMCiter"
   )
   
   candidate_paths <- candidate_paths[!is.na(candidate_paths)]

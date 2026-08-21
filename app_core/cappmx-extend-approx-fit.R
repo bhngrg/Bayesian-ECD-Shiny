@@ -358,8 +358,6 @@ cappmx_fit=function(cat_cov_trt=NULL,cont_cov_trt=NULL, response_trt, surv_ind_t
   if(!isnullcat2 ){
     for(i in 1:nsamp2){
       for(j in (i):nsamp2){
-        if(j>nsamp2)
-          print(j)
         ds[i,j]=hamm_dist(eta.cat2[i,],eta.cat2[j,])
         ds[j,i]=ds[i,j]
       }
@@ -1224,6 +1222,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     colnames(dat_trt.index) <- c("Data_Indices", "Treatment_Indices")
     CAPPMx.result$Combined_Indices <- unique(dat_trt.index) + 1L
     CAPPMx.result$Variable_specifications <- result_CAPPMx$Variable_specifications
+    CAPPMx.result$Cat_Levels <- result_CAPPMx$Cat_Levels
     
     return(CAPPMx.result)
   } else {
@@ -2045,6 +2044,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     colnames(dat_trt.index) <- c("Data_Indices", "Treatment_Indices")
     CAPPMx.result$Combined_Indices <- unique(dat_trt.index) + 1L
     CAPPMx.result$Variable_specifications <- result_CAPPMx$Variable_specifications
+    CAPPMx.result$Cat_Levels <- result_CAPPMx$Cat_Levels
     
     return(CAPPMx.result)
     # ============= PREDICTION BRANCH =============

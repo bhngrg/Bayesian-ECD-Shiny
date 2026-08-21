@@ -47,11 +47,12 @@ large_rmst_theme <- theme(
 )
 
 # user interface ----
-ui <- navset_bar(
+ui <- tagList(
   tags$head(
     tags$link(rel = "stylesheet", type = "text/css", href = "custom.css")
   ),
-  title = "Bayesian-ECD demo",
+  navset_bar(
+    title = "Bayesian-ECD demo",
   navbar_options = navbar_options(
     bg = "#0062cc",
     underline = TRUE
@@ -105,22 +106,19 @@ ui <- navset_bar(
         
         helpText("Name of the column containing sex"),
         helpText(tags$ul(
-          tags$li("Expected factor levels after loading: Female, Male"),
-          tags$li("Original coding assumed: 0 = Female, 1 = Male")
+          tags$li("Required category labels: Female, Male")
         )),
         textInput("sex", "Sex: ", value = NULL),
         
         helpText("Name of the column containing baseline KPS category"),
         helpText(tags$ul(
-          tags$li("Expected factor levels after loading: > 80, (60, 80], <= 60"),
-          tags$li("Original coding assumed: 0 = > 80, 1 = (60, 80], 2 = <= 60")
+          tags$li("Required category labels: > 80, (60, 80], <= 60")
         )),
         textInput("kps", "KPS: ", value = NULL),
         
         helpText("Name of the column containing extent of resection"),
         helpText(tags$ul(
-          tags$li("Expected factor levels after loading: GTR, STR, biopsy"),
-          tags$li("Original coding assumed: 0 = GTR, 1 = STR, 2 = biopsy")
+          tags$li("Required category labels: GTR, STR, biopsy")
         )),
         textInput("eor", "EOR: ", value = NULL),
         
@@ -507,6 +505,7 @@ ui <- navset_bar(
       page_fillable(DTOutput("pred_rmst_table")),
       downloadButton("downloadPredRMSTtable", "Download Prediction RMST Table (.csv)", style = "width: 100%;")
     )
+  )
   )
 )
 
@@ -1230,7 +1229,7 @@ server <- function(input, output, session) {
           
           incProgress(
             amount = 0.25,
-            detail = "Step 3 of 3: Computing historical posterior predictive survival bands and median interval for the uploaded concurrent-control covariate population."
+            detail = "Step 3 of 3: Computing the historical posterior predictive control survival bands and median interval."
           )
           
           out <- run_control_compatibility_check(

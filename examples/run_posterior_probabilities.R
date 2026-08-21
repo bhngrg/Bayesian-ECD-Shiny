@@ -39,8 +39,7 @@ find_repo_root <- function(script_path) {
   candidate_dirs <- c(
     script_dir,
     normalizePath(file.path(script_dir, ".."), winslash = "/", mustWork = FALSE),
-    normalizePath(getwd(), winslash = "/", mustWork = FALSE),
-    normalizePath(file.path(getwd(), "cappmx_package_prep"), winslash = "/", mustWork = FALSE)
+    normalizePath(getwd(), winslash = "/", mustWork = FALSE)
   )
   
   for (candidate in unique(candidate_dirs)) {
@@ -200,11 +199,7 @@ if (length(missing_prediction_cols) > 0) {
 #   second level -> "1"
 #   third level  -> "2"
 
-cat_levels <- list(
-  sex = c("Female", "Male"),
-  kps = c("> 80", "(60, 80]", "<= 60"),
-  eor = c("GTR", "STR", "biopsy")
-)
+cat_levels <- result.CAPPMx.base$Cat_Levels
 
 set_example_factor_levels <- function(df, cat_levels, dataset_name = "dataset") {
   for (var_name in names(cat_levels)) {

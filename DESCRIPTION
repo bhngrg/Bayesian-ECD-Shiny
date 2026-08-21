@@ -3,7 +3,6 @@ Title: Bayesian-ECD Shiny App
 Version: 0.1.0
 Authors@R: person("Bhanu", "Garg", role = c("aut", "cre"))
 Description: Shiny application for Bayesian-ECD survival modeling, subpopulation analysis, restricted mean survival time summaries, prediction on covariate-only datasets, and optional posterior probability utilities.
-License: MIT
 Encoding: UTF-8
 Depends:
     R (>= 4.2.2)
@@ -31,5 +30,8 @@ Imports:
     purrr,
     rstudioapi,
     mcclust,
-    labeling
+    cluster,
+    e1071,
+    randomForest,
+    survival
     

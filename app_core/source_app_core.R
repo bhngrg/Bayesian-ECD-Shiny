@@ -29,7 +29,9 @@ required_packages <- c(
   "purrr",
   "rstudioapi",
   "mcclust",
-  "labeling",
+  "cluster",
+  "e1071",
+  "randomForest",
   "survival"
 )
 
@@ -44,9 +46,7 @@ if (length(missing_packages) > 0) {
     "\n\nPlease install them with:\n",
     "install.packages(c(",
     paste(sprintf('"%s"', missing_packages), collapse = ", "),
-    "))\n\n",
-    "If RcppGSL fails to install, check that the GNU Scientific Library (GSL) ",
-    "and system build tools are installed for your operating system.",
+    "))",
     call. = FALSE
   )
 }
