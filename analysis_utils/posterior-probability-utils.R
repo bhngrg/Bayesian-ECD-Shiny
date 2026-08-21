@@ -103,7 +103,7 @@ posterior_prob_hr_lt <- function(result,
     
     missing_vars <- setdiff(names(subgroup_list), names(input_df))
     if (length(missing_vars) > 0) {
-      stop("These subgroup variables are not in input_df: ",
+      stop("These subpopulation variables are not in input_df: ",
            paste(missing_vars, collapse = ", "))
     }
     
@@ -127,7 +127,7 @@ posterior_prob_hr_lt <- function(result,
         
         lev_codes <- as.integer(lev_codes)
         if (any(is.na(lev_codes))) {
-          stop("Categorical subgroup specification for ", v,
+          stop("Categorical subpopulation specification for ", v,
                " must contain only digit codes like '0', '01', '012'.")
         }
         
@@ -139,7 +139,7 @@ posterior_prob_hr_lt <- function(result,
         } else if (is.numeric(x) || is.integer(x)) {
           x_code <- as.integer(x)
         } else {
-          stop("Categorical subgroup variable ", v,
+          stop("Categorical subpopulation variable ", v,
                " must be stored as factor, integer, or numeric.")
         }
         
@@ -158,13 +158,13 @@ posterior_prob_hr_lt <- function(result,
         rng <- subgroup_list[[v]]
         
         if (!is.numeric(rng) || length(rng) != 2 || any(!is.finite(rng))) {
-          stop("Continuous subgroup specification for ", v,
+          stop("Continuous subpopulation specification for ", v,
                " must be a numeric vector of length 2, e.g. c(lower, upper).")
         }
         
         x <- input_df[[v]]
         if (!is.numeric(x)) {
-          stop("Continuous subgroup variable ", v, " must be numeric.")
+          stop("Continuous subpopulation variable ", v, " must be numeric.")
         }
         
         which(x >= rng[1] & x < rng[2])
@@ -179,7 +179,7 @@ posterior_prob_hr_lt <- function(result,
   }
   
   if (length(subgroup_ind) <= 1) {
-    stop("This subgroup is too small for a meaningful analysis.")
+    stop("This subpopulation is too small for a meaningful analysis.")
   }
   
   ## ----------------------------------------------------------
@@ -385,7 +385,7 @@ posterior_prob_rmst <- function(result,
     
     missing_vars <- setdiff(names(subgroup_list), names(input_df))
     if (length(missing_vars) > 0) {
-      stop("These subgroup variables are not in input_df: ",
+      stop("These subpopulation variables are not in input_df: ",
            paste(missing_vars, collapse = ", "))
     }
     
@@ -407,7 +407,7 @@ posterior_prob_rmst <- function(result,
         
         lev_codes <- as.integer(lev_codes)
         if (any(is.na(lev_codes))) {
-          stop("Categorical subgroup specification for ", v,
+          stop("Categorical subpopulation specification for ", v,
                " must contain only digit codes like '0', '01', '012'.")
         }
         
@@ -418,7 +418,7 @@ posterior_prob_rmst <- function(result,
         } else if (is.numeric(x) || is.integer(x)) {
           x_code <- as.integer(x)
         } else {
-          stop("Categorical subgroup variable ", v,
+          stop("Categorical subpopulation variable ", v,
                " must be stored as factor, integer, or numeric.")
         }
         
@@ -437,13 +437,13 @@ posterior_prob_rmst <- function(result,
         rng <- subgroup_list[[v]]
         
         if (!is.numeric(rng) || length(rng) != 2 || any(!is.finite(rng))) {
-          stop("Continuous subgroup specification for ", v,
+          stop("Continuous subpopulation specification for ", v,
                " must be a numeric vector of length 2, e.g. c(lower, upper).")
         }
         
         x <- input_df[[v]]
         if (!is.numeric(x)) {
-          stop("Continuous subgroup variable ", v, " must be numeric.")
+          stop("Continuous subpopulation variable ", v, " must be numeric.")
         }
         
         which(x >= rng[1] & x < rng[2])
@@ -458,7 +458,7 @@ posterior_prob_rmst <- function(result,
   }
   
   if (length(subgroup_ind) <= 1) {
-    stop("This subgroup is too small for a meaningful analysis.")
+    stop("This subpopulation is too small for a meaningful analysis.")
   }
   
   ## ----------------------------------------------------------

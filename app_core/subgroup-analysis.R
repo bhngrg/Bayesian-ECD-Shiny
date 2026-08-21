@@ -102,7 +102,7 @@ subgroup_data <- function(result,
   if(!is.list(subgroup_list))
   {
     stop("Stay consistent with the covariate variable names that you intially provided.
-    Please input a subgroup specfication list in this form:
+    Please input a subpopulation specification list in this form:
          list(sex = \"01\",
          eor = \"012\", 
          kps = \"012\",
@@ -133,7 +133,7 @@ subgroup_data <- function(result,
                                       result$Variable_specifications$cat_vars)))
   {
     print("Stay consistent with the covariate variable names that you intially provided.")
-    stop("Please input a subgroup specfication list in either of these form:
+    stop("Please input a subpopulation specification list in either of these form:
          list(sex = \"01\",
          eor = \"012\", 
          kps = \"012\",
@@ -160,7 +160,7 @@ subgroup_data <- function(result,
   
   if(all(is.na(subgroup_list)))
   {
-    warning("Since you specified no subgroups, we will do analysis on the whole 
+    warning("Since you specified no subpopulation restrictions, we will do analysis on the whole
          data.")
   }
   
@@ -204,7 +204,7 @@ subgroup_data <- function(result,
         lev_codes <- as.integer(strsplit(spec, split = "")[[1]])
         
         if (any(is.na(lev_codes))) {
-          stop("Categorical subgroup specification for ", v,
+          stop("Categorical subpopulation specification for ", v,
                " must contain only digit codes like '0', '01', or '012'.")
         }
         
@@ -252,7 +252,7 @@ subgroup_data <- function(result,
         rng <- as.numeric(subgroup_list[[v]])
         
         if (length(rng) != 2 || any(!is.finite(rng))) {
-          stop("Continuous subgroup specification for ", v,
+          stop("Continuous subpopulation specification for ", v,
                " must be a numeric vector of length 2, e.g. c(48, 81).")
         }
         
@@ -279,8 +279,8 @@ subgroup_data <- function(result,
   #### subgroup analysis ----
   if (length(subgroup_ind) <= 1) {
     stop(
-      "This subgroup is too small for a meaningful analysis. ",
-      "Selected subgroup size = ", length(subgroup_ind), "."
+      "This subpopulation is too small for a meaningful analysis. ",
+      "Selected subpopulation size = ", length(subgroup_ind), "."
     )
   }
   

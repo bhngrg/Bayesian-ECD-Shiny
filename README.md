@@ -1,11 +1,11 @@
 # Bayesian-ECD Shiny App
 
-This repository contains a Shiny application for Bayesian-ECD survival modeling, subgroup analysis, restricted mean survival time (RMST) summaries, and prediction on new covariate-only datasets.
+This repository contains a Shiny application for Bayesian-ECD survival modeling, subpopulation analysis, restricted mean survival time (RMST) summaries, and prediction on new covariate-only datasets.
 
 ## Repository structure
 
 - `app/`: Shiny application files.
-- `app_core/`: Core modeling, plotting, RMST, subgroup, and C++ helper routines used by the app.
+- `app_core/`: Core modeling, plotting, RMST, subpopulation, and C++ helper routines used by the app.
 - `app/data/storedMCMCiter/`: Stored baseline MCMC components loaded by the app.
 - `analysis_utils/`: Additional user-facing analysis utilities that are not part of the Shiny interface.
 - `examples/`: Example R scripts showing how to run optional analyses outside the Shiny app.
@@ -307,8 +307,8 @@ Use the following tabs:
 
 - **Plot Output**
 - **RMST Output**
-- **Subgroup Analysis**
-- **Subgroup RMST Output**
+- **Subpopulation Analysis**
+- **Subpopulation RMST Output**
 
 ### 4. Upload prediction data
 
@@ -336,7 +336,7 @@ The prediction workflow reruns `cappmx_extend_approx_fit()` with `input_df_pred 
 
 ## Optional posterior probability utilities
 
-The Shiny app focuses on survival curves, hazard-ratio curves, RMST summaries, subgroup analyses, and prediction outputs.
+The Shiny app focuses on survival curves, hazard-ratio curves, RMST summaries, subpopulation analyses, and prediction outputs.
 
 Additional posterior probability utilities are provided in:
 

@@ -287,7 +287,7 @@ ui <- navset_bar(
   
   # Panel with subgroup analysis output
   nav_panel(
-    title = "Subgroup Analysis",
+    title = "Subpopulation Analysis",
     layout_sidebar(
       helpText("Make your selections, and click the submit button."),
       sidebar = sidebar(
@@ -359,9 +359,9 @@ ui <- navset_bar(
   
   # Panel with subgroup RMST output
   nav_panel(
-    title = "Subgroup RMST Output",
+    title = "Subpopulation RMST Output",
     layout_sidebar(
-      helpText("Make your selections in the Subgroup Analysis tab, then click Submit here."),
+      helpText("Make your selections in the Subpopulation Analysis tab, then click Submit here."),
       sidebar = sidebar(
         width = 320,
         numericInput(
@@ -415,7 +415,7 @@ ui <- navset_bar(
   nav_panel(
     title = "Prediction Output",
     layout_sidebar(
-      helpText("Prediction output is generated from the uploaded prediction dataset. By default, the full prediction dataset is used unless subgroup filters are enabled."),
+      helpText("Prediction output is generated from the uploaded prediction dataset. By default, the full prediction dataset is used unless subpopulation filters are enabled."),
       sidebar = sidebar(
         width = 320,
         
@@ -443,7 +443,7 @@ ui <- navset_bar(
         
         checkboxInput(
           "pred_use_subgroup",
-          "Apply subgroup filters to prediction dataset",
+          "Apply subpopulation filters to prediction dataset",
           value = FALSE
         ),
         
@@ -492,7 +492,7 @@ ui <- navset_bar(
   nav_panel(
     title = "Prediction RMST Output",
     layout_sidebar(
-      helpText("This RMST table uses the same prediction cohort/subgroup selected in the Prediction Output tab."),
+      helpText("This RMST table uses the same prediction cohort/subpopulation selected in the Prediction Output tab."),
       sidebar = sidebar(
         width = 320,
         numericInput(
@@ -1006,7 +1006,7 @@ server <- function(input, output, session) {
     req(input$treatment_selection2)
     
     withProgress(
-      message = "Building the subgroup plotting results.",
+      message = "Building the subpopulation plotting results.",
       detail = "This may take a moment.",
       value = 0, {
         subgroup_data(
@@ -1050,7 +1050,7 @@ server <- function(input, output, session) {
     req(input$horizon_time1)
     
     withProgress(
-      message = "Building the subgroup RMST table.",
+      message = "Building the subpopulation RMST table.",
       detail = "This may take a moment.",
       value = 0, {
         RMST_result(
@@ -1391,7 +1391,7 @@ server <- function(input, output, session) {
       trt,
       min_time,
       max_time,
-      cohort_label = "Subgroup sample size:"
+      cohort_label = "Subpopulation sample size:"
   ) {
     plt <- switch(
       plot_type,
@@ -1545,7 +1545,7 @@ server <- function(input, output, session) {
     req(input$treatment_selection2)
     
     withProgress(
-      message = "Building the subgroup survival/hazard ratio plot",
+      message = "Building the subpopulation survival/hazard ratio plot",
       detail = "This may take a moment.",
       value = 0, {
         subgroup_plot_result <- plot_store1()
@@ -1557,7 +1557,7 @@ server <- function(input, output, session) {
           trt = input$treatment_selection2,
           min_time = input$min_time1,
           max_time = input$max_time1,
-          cohort_label = "Subgroup sample size:"
+          cohort_label = "Subpopulation sample size:"
         )
       }
     )
@@ -1574,7 +1574,7 @@ server <- function(input, output, session) {
         prediction_plot_result <- pred_plot_store()
         
         cohort_label <- if (isTRUE(input$pred_use_subgroup)) {
-          "Prediction subgroup sample size:"
+          "Prediction subpopulation sample size:"
         } else {
           "Prediction sample size:"
         }
@@ -1656,7 +1656,7 @@ server <- function(input, output, session) {
         trt = input$treatment_selection2,
         min_time = input$min_time1,
         max_time = input$max_time1,
-        cohort_label = "Subgroup sample size:"
+        cohort_label = "Subpopulation sample size:"
       )
       
       save_plot_with_optional_size(
@@ -1678,7 +1678,7 @@ server <- function(input, output, session) {
       prediction_plot_result <- pred_plot_store()
       
       cohort_label <- if (isTRUE(input$pred_use_subgroup)) {
-        "Prediction subgroup sample size:"
+        "Prediction subpopulation sample size:"
       } else {
         "Prediction sample size:"
       }

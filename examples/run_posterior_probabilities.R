@@ -389,7 +389,7 @@ subgroup_list <- list(
   age = c(50, 70)
 )
 
-message("Running optional subgroup posterior probability example.")
+message("Running optional subpopulation posterior probability example.")
 
 hr_prob_subgroup <- posterior_prob_hr_lt(
   result = pred_result,
@@ -403,10 +403,10 @@ hr_prob_subgroup <- posterior_prob_hr_lt(
   use_pred = TRUE
 )
 
-message("Posterior probability results for subgroup HR:")
+message("Posterior probability results for subpopulation HR:")
 print(hr_prob_subgroup$posterior_probability)
 
-message("Posterior subgroup HR summary:")
+message("Posterior subpopulation HR summary:")
 print(hr_prob_subgroup$hr_summary)
 
 
@@ -424,13 +424,13 @@ rmst_prob_subgroup <- posterior_prob_rmst(
   n_time_grid = 200
 )
 
-message("Posterior probability results for subgroup RMST difference at 730.5 days:")
+message("Posterior probability results for subpopulation RMST difference at 730.5 days:")
 print(rmst_prob_subgroup$results_by_horizon[["730.5_days"]]$posterior_probability_diff)
 
-message("Posterior probability results for subgroup RMST ratio at 730.5 days:")
+message("Posterior probability results for subpopulation RMST ratio at 730.5 days:")
 print(rmst_prob_subgroup$results_by_horizon[["730.5_days"]]$posterior_probability_ratio)
 
-message("Posterior subgroup RMST summary table at 730.5 days:")
+message("Posterior subpopulation RMST summary table at 730.5 days:")
 print(rmst_prob_subgroup$results_by_horizon[["730.5_days"]]$summary_table)
 
 
