@@ -31,5 +31,6 @@ backups/
 notes/
 
 # generated user-guide files
-docs/Bayesian-ECD-Shiny-User-Guide_files/
+docs/Bayesian-ECD-Shiny-User-Guide.Rmd
+docs/Bayesian-ECD-Shiny-User-Guide.html
 docs/figures/

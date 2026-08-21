@@ -8,8 +8,7 @@ The application runs locally in R and uses stored posterior information from the
 
 Detailed installation instructions, data requirements, analysis workflows, output descriptions, and troubleshooting guidance are provided in:
 
-- [Rendered HTML user guide](docs/Bayesian-ECD-Shiny-User-Guide.html)
-- [User guide source (R Markdown)](docs/Bayesian-ECD-Shiny-User-Guide.Rmd)
+- [Bayesian-ECD Shiny User Guide](docs/Bayesian-ECD-Shiny-User-Guide.md)
 
 A rendered PDF version of the user guide is provided separately with the journal supplementary materials.
 
