@@ -272,9 +272,38 @@ subgroup_data <- function(result,
 
   timepoints <- log(timepoints)
 
-  # extract treatment indices (using grepl)
-  trt_indices <- which(grepl(trt, names(thetas)) == TRUE)
-  cntrl_indices <- which(grepl(cntrl, names(thetas)) == TRUE)
+  # Extract treatment-specific theta entries using exact names.
+  # Avoid substring matching because labels such as "Control" and
+  # "Current Control" overlap.
+  trt_indices <- match(
+    c(
+      paste0("mu_", trt),
+      paste0("sd_", trt)
+    ),
+    names(thetas)
+  )
+
+  cntrl_indices <- match(
+    c(
+      paste0("mu_", cntrl),
+      paste0("sd_", cntrl)
+    ),
+    names(thetas)
+  )
+
+  if (anyNA(trt_indices)) {
+    stop(
+      "Could not identify exact treatment theta entries for: ",
+      trt
+    )
+  }
+
+  if (anyNA(cntrl_indices)) {
+    stop(
+      "Could not identify exact control theta entries for: ",
+      cntrl
+    )
+  }
 
   cl <- ifelse((parallel::detectCores() - 1) > 1,
                parallel::detectCores() - 1,

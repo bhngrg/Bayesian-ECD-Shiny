@@ -442,7 +442,8 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
                                      beta_temper_tau     = 10,      # EB weight w = n_fail / (n_fail + tau)
                                      beta_cap_q          = c(0.10, 0.90),  # clamp β to control-based quantiles
                                      beta_var_floor_mult = 1.0,     # inflate floor on log-β variance if needed
-                                     min_failures_for_EB = 3)       # below this, w := 0 (fall back to pool) 
+                                     min_failures_for_EB = 3,       # below this, w := 0 (fall back to pool)
+                                     stage2_n_stored = 1200)
 {
   # normalize inputs (avoid tibble one-index surprises)
   if (!is.null(input_df))      input_df      <- as.data.frame(input_df)
@@ -728,7 +729,30 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     storage.mode(trt.index) <- "integer"
     
     # --- Run sampler ---
-    burn <- 0; thin <- 5; nrun <- (nrow(result_CAPPMx$picube) - burn)/2
+    burn <- 0
+    thin <- 5
+
+    if (is.null(stage2_n_stored)) {
+
+      ## Preserve the original Stage-2 behavior exactly.
+      nrun <- (nrow(result_CAPPMx$picube) - burn) / 2
+
+    } else {
+
+      if (
+        length(stage2_n_stored) != 1L ||
+        !is.finite(stage2_n_stored) ||
+        stage2_n_stored < 1L ||
+        stage2_n_stored != as.integer(stage2_n_stored)
+      ) {
+        stop(
+          "stage2_n_stored must be a single positive integer or NULL."
+        )
+      }
+
+      ## C++ stores one draw every `thin` MCMC iterations.
+      nrun <- as.integer(stage2_n_stored) * thin
+    }
     
     ## discarding half
     new_M <- (M - (M/2) + 1):(M)
@@ -1543,7 +1567,31 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       )) - 1L
     )
     
-    burn <- 0; thin <- 5; nrun <- (nrow(result_CAPPMx$picube) - burn)/2
+    # --- Run sampler ---
+    burn <- 0
+    thin <- 5
+
+    if (is.null(stage2_n_stored)) {
+
+      ## Preserve the original Stage-2 behavior exactly.
+      nrun <- (nrow(result_CAPPMx$picube) - burn) / 2
+
+    } else {
+
+      if (
+        length(stage2_n_stored) != 1L ||
+        !is.finite(stage2_n_stored) ||
+        stage2_n_stored < 1L ||
+        stage2_n_stored != as.integer(stage2_n_stored)
+      ) {
+        stop(
+          "stage2_n_stored must be a single positive integer or NULL."
+        )
+      }
+
+      ## C++ stores one draw every `thin` MCMC iterations.
+      nrun <- as.integer(stage2_n_stored) * thin
+    }
     
     # right before the C++ call
     storage.mode(eta.cat)  <- "integer"
