@@ -836,7 +836,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
   const unsigned k_cont = eta_cont.n_cols;
 
   arma::mat eta_cont_sq = arma::square(eta_cont);
-  const double max_st = 5*st.max();
+  const double max_st = std::log(5*365.25) // set at 5 years (GBM data based)
 
   // unpack non-missing index lists
   arma::field<arma::uvec> non_na_obs(n), non_na_obs_cont(n);
@@ -1001,8 +1001,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
           double beta_post = beta0_t_cur + ( ss_j - (njt - 1.0)*((mean_j) * (mean_j))
                                                + tmp_shrink * ((mean_j - mu0_t_cur) * (mean_j - mu0_t_cur)) )/2.0;
           double sigma_post= std::sqrt( beta_post * (df_post+1.0)/(df_post*alpha_post) );
-          st(ii) = r_trunclst(2.0*alpha_post, mu_post, sigma_post, st_original(ii), std::numeric_limits<double>::max());
-          st(ii) = std::min(st(ii), max_st );
+          st(ii) = r_trunclst(2.0*alpha_post, mu_post, sigma_post, st_original(ii), max_st);
           // update stats
           ss_survtime(j,t) = ss_j + ((st(ii)) * (st(ii)));
           survtime(j,t)    = sum_j + st(ii);
@@ -1523,7 +1522,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
   const unsigned k_cont = eta_cont.n_cols;
 
   arma::mat eta_cont_sq = arma::square(eta_cont);
-  const double max_st   = 5.0 * max(st);
+  const double max_st   = std::log(5*365.25); // set at 5 years (GBM data based)
 
   // -------- handy accessors for non-NA indices --------
   field<arma::uvec> non_na_obs(n_curr), non_na_obs_cont(n_curr);
@@ -1709,8 +1708,8 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
               double beta_post = beta0_t_cur + (ss_j - n_j*mean_j*mean_j + tmp*(mean_j - mu0_t_cur)*(mean_j - mu0_t_cur))/2.0;
               double sigma_post = std::sqrt( beta_post * (df_post+1.0)/(df_post*alpha_post) );
 
-              st(ii) = r_trunclst(2*alpha_post, mu_post, sigma_post, st_original(ii), std::numeric_limits<double>::max());
-              st(ii) = std::min(st(ii), max_st);
+              st(ii) = r_trunclst(2*alpha_post, mu_post, sigma_post, st_original(ii), max_st);
+              // st(ii) = std::min(st(ii), max_st);
               // restore
               ss_survtime_curr(j,t) = ss_j + st(ii)*st(ii);
               survtime_curr(j,t)    = s_j + st(ii);
@@ -2242,7 +2241,7 @@ Rcpp::List common_atoms_cat_lognormal_shared(
   const unsigned k_cont = eta_cont.n_cols;
 
   arma::mat eta_cont_sq = arma::square(eta_cont);
-  const double max_st = 5 * max(st);
+  const double max_st = std::log(5*365.25); // set at 5 years (GBM data based)
 
   // ===== bring non-missing indices =====
   arma::field<arma::uvec> non_na_obs(n), non_na_obs_cont(n);
