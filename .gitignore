@@ -34,3 +34,6 @@ notes/
 docs/Bayesian-ECD-Shiny-User-Guide.Rmd
 docs/Bayesian-ECD-Shiny-User-Guide.html
 docs/figures/
+
+# local Stage-1 regeneration utility
+scripts/regenerate_stored_stage1.R

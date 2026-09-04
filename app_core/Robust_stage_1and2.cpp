@@ -836,7 +836,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
   const unsigned k_cont = eta_cont.n_cols;
 
   arma::mat eta_cont_sq = arma::square(eta_cont);
-  const double max_st = std::log(5*365.25) // set at 5 years (GBM data based)
+  const double max_st = std::log(5*365.25); // set at 5 years (GBM data based)
 
   // unpack non-missing index lists
   arma::field<arma::uvec> non_na_obs(n), non_na_obs_cont(n);
