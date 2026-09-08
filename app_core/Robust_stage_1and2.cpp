@@ -4,8 +4,11 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <random>
+#include <boost/math/special_functions/digamma.hpp>
+#include <mlpack/core/math/log_add.hpp>
 
-// [[Rcpp::depends(RcppArmadillo,RcppDist)]]
+// [[Rcpp::depends(RcppArmadillo,RcppDist,BH,mlpack)]]
 // [[Rcpp::plugins(cpp17)]]
 
 using namespace arma;
@@ -68,7 +71,7 @@ double log_sum_exp(const arma::vec &x)
     return max_val;
   }
 
-  return max_val + std::log(arma::accu(arma::exp(x - max_val)));
+  return mlpack::AccuLog(x);
 }
 
 // [[Rcpp::export]]
@@ -254,7 +257,8 @@ void update_lognorm_hyper_extend(const arma::mat &nj_val,
                                  const double b_m, const double b_v,
                                  const arma::vec &del_range, const unsigned nleapfrog,
                                  arma::vec &params, unsigned &acceptance,
-                                 const unsigned t){
+                                 const unsigned t,
+                                 std::mt19937_64 &poisson_rng){
   double ll_old = -logpi_lognorm_extend(nj_val, survtime, ss_survtime,
                                         params, a0, df0, mu_m, mu_v, b_m, b_v, t);
   arma::vec v_old = -delpi_lognorm_extend(nj_val, survtime, ss_survtime,
@@ -265,7 +269,8 @@ void update_lognorm_hyper_extend(const arma::mat &nj_val,
 
   arma::vec params_new=params, v_new=v_old;
 
-  unsigned pois_draw=(unsigned) R::rpois(nleapfrog);
+  std::poisson_distribution<unsigned> pois_dist(static_cast<double>(nleapfrog));
+  unsigned pois_draw = pois_dist(poisson_rng);
   unsigned nstep=std::max(1u, pois_draw);
   double delta= arma::randu(distr_param(del_range(0),del_range(1)));
   // Rcpp::Rcout<<"Flag X params -.5!!"<<endl;
@@ -326,12 +331,12 @@ double del_ll_alpha(const double l_alpha, const unsigned K, const arma::vec &nj_
   const double al_by_k = alpha / static_cast<double>(K);
 
   arma::vec tmp = nj_vec + al_by_k;
-  tmp.transform([](double val) { return R::digamma(val); });
+  tmp.transform([](double val) { return boost::math::digamma(val); });
 
   double ret =
-    (R::digamma(alpha)
-     - R::digamma(alpha + arma::accu(nj_vec))
-     + (arma::accu(tmp) - Kn * R::digamma(al_by_k))
+    (boost::math::digamma(alpha)
+     - boost::math::digamma(alpha + arma::accu(nj_vec))
+     + (arma::accu(tmp) - Kn * boost::math::digamma(al_by_k))
        / static_cast<double>(K)) * alpha
     - (l_alpha - mu_alp) / (sig_alp * sig_alp);
 
@@ -351,7 +356,8 @@ void leapfrog_dir_alpha(const unsigned nstep,const double delta, double &v_old, 
 }
 
 void update_alpha(const unsigned K, const arma::vec &nj_vec, const double mu_alp, const double sig_alp,
-                  const arma::vec &del_range_alp, const unsigned nleapfrog_alp, double &l_alpha, unsigned &acceptance){
+                  const arma::vec &del_range_alp, const unsigned nleapfrog_alp, double &l_alpha, unsigned &acceptance,
+                  std::mt19937_64 &poisson_rng){
   /*double mu_alp, sig_alp;
    sig_alp=log1p(ps_hyper(1) /((ps_hyper(0)) * (ps_hyper(0))));mu_alp=log(ps_hyper(0))-sig_alp/2;sig_alp=sqrt(sig_alp);*/
 
@@ -362,7 +368,8 @@ void update_alpha(const unsigned K, const arma::vec &nj_vec, const double mu_alp
 
   double l_alpha_new=l_alpha, v_new=v_old;
 
-  unsigned pois_draw=(unsigned) R::rpois(nleapfrog_alp); //randomly generating no. of leapfrog steps
+  std::poisson_distribution<unsigned> pois_dist(static_cast<double>(nleapfrog_alp));
+  unsigned pois_draw = pois_dist(poisson_rng); // randomly generating no. of leapfrog steps
   unsigned nstep=std::max(1u, pois_draw);
   // nstep=GSL_MIN_INT(nstep,leapmax);
   double delta= arma::randu(distr_param(del_range_alp(0),del_range_alp(1)));//randomly generating \delta t
@@ -740,7 +747,8 @@ void update_lognorm_hyper(const arma::vec &nj_val1, const arma::vec &nj_val2,
                           const double a0,const  double df0,
                           const double mu_m, const  double mu_v,
                           const double b_m, const double b_v,
-                          const arma::vec &del_range, const unsigned nleapfrog, arma::vec &params, unsigned &acceptance){
+                          const arma::vec &del_range, const unsigned nleapfrog, arma::vec &params, unsigned &acceptance,
+                          std::mt19937_64 &poisson_rng){
   double ll_old=-logpi_lognorm(nj_val1, nj_val2, survtime1, ss_survtime1, survtime2, ss_survtime2,
                                params, a0, df0, mu_m, mu_v, b_m, b_v);
   arma::vec v_old=-delpi_lognorm(nj_val1, nj_val2, survtime1, ss_survtime1, survtime2, ss_survtime2,
@@ -751,7 +759,8 @@ void update_lognorm_hyper(const arma::vec &nj_val1, const arma::vec &nj_val2,
 
   arma::vec params_new=params, v_new=v_old;
 
-  unsigned pois_draw=(unsigned) R::rpois(nleapfrog);
+  std::poisson_distribution<unsigned> pois_dist(static_cast<double>(nleapfrog));
+  unsigned pois_draw = pois_dist(poisson_rng);
   unsigned nstep=std::max(1u, pois_draw);
   double delta= arma::randu<double>(arma::distr_param(del_range(0), del_range(1)));
   // Rcpp::Rcout<<"Flag X params -.5!!"<<endl;
@@ -803,8 +812,12 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
                                    const arma::vec &del_range_alp2,
                                    const unsigned nleapfrog_alp2,
                                    const int nrun,const int burn,
-                                   const int thin)
+                                   const int thin,
+                                   const unsigned cpp_rng_seed = 5489)
 {
+  // Dedicated standard-C++ stream for Poisson-randomized HMC trajectory lengths.
+  // Seed once per MCMC run; never reseed inside an iteration.
+  std::mt19937_64 poisson_rng(cpp_rng_seed);
   const unsigned n = trt_index.n_elem;
   const unsigned n_trt = max(trt_index) + 1;
   const unsigned num_cohort = max(dat_index) + 1;
@@ -1305,7 +1318,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
       update_lognorm_hyper_extend(NJ_t, S_t, SS_t,
                                   a0, df0, mu_m_t(t), mu_v_t(t), b_m_t(t), b_v_t(t),
                                   del_rng_t, nlf_t,
-                                  cp, acceptance_y(t), t);
+                                  cp, acceptance_y(t), t, poisson_rng);
       params_t(t,0) = cp(0);
       params_t(t,1) = cp(1);
     }
@@ -1316,7 +1329,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
       arma::uvec one = {0};
       arma::uvec ne  = non_empty_clusters(0);
       update_alpha(nmix1, nj_val(ne, one), mu_alp, sig_alp,
-                   del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0));
+                   del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0), poisson_rng);
       alpha(0)   = std::exp(l_alpha);
       dir_prec(0)= alpha(0)/nmix;
       prob_empty(0) = std::log(dir_prec(0));
@@ -1327,7 +1340,7 @@ Rcpp::List background_MCMC_storage(const arma::uvec &dat_index,
       arma::uvec one = {s};
       arma::uvec ne  = non_empty_clusters(s);
       update_alpha(nmix, nj_val(ne, one), mu_alp, sig_alp,
-                   del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph(s));
+                   del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph(s), poisson_rng);
       alpha(s)   = std::exp(l_alpha);
       dir_prec(s)= alpha(s)/nmix;
       prob_empty(s) = std::log(dir_prec(s));
@@ -1452,8 +1465,11 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
                                                     const arma::cube pimat_old,
                                                     const bool freeze_control,
                                                     const arma::vec &mu0_control_draws,
-                                                    const arma::vec &beta0_control_draws)
+                                                    const arma::vec &beta0_control_draws,
+                                                    const unsigned cpp_rng_seed = 5489)
 {
+  // Dedicated standard-C++ stream for Poisson-randomized HMC trajectory lengths.
+  std::mt19937_64 poisson_rng(cpp_rng_seed);
   // Retained for R-facing interface compatibility.
   (void)alpha_hyper;
   (void)del_range_alp2;
@@ -2029,7 +2045,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
         mu_m_t(t), mu_v_t(t),
         b_m_t(t),  b_v_t(t),
         del_rng_t, nlf_t,
-        cp, acceptance_y(t), t
+        cp, acceptance_y(t), t, poisson_rng
       );
       params_t(t, 0) = cp(0);
       params_t(t, 1) = cp(1);
@@ -2042,7 +2058,7 @@ Rcpp::List common_atoms_cat_lognormal_shared_approx(const arma::uvec &dat_index,
       double l_alpha = std::log(alpha(0));
       arma::uvec ind0 = {0};
       update_alpha(A_size, nj_val_curr(A, ind0), mu_alp, sig_alp,
-                   del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0));
+                   del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0), poisson_rng);
       alpha(0)   = std::exp(l_alpha);
       dir_prec(0)= alpha(0)/A_size;
     }
@@ -2207,8 +2223,11 @@ Rcpp::List common_atoms_cat_lognormal_shared(
     const arma::vec &del_range_alp2,
     const unsigned nleapfrog_alp2,
     const int nrun, const int burn,
-    const int thin
+    const int thin,
+    const unsigned cpp_rng_seed = 5489
 ) {
+  // Dedicated standard-C++ stream for Poisson-randomized HMC trajectory lengths.
+  std::mt19937_64 poisson_rng(cpp_rng_seed);
   const unsigned n = trt_index.n_elem;
   const unsigned n_trt = max(trt_index) + 1;
   const unsigned num_cohort = max(dat_index) + 1;
@@ -2723,7 +2742,7 @@ Rcpp::List common_atoms_cat_lognormal_shared(
       update_lognorm_hyper_extend(                                                       // [NEW]
         nj_val_shared, survtime, ss_survtime,
         a0, df0, mu_m, mu_v, b_m, b_v,
-        del_range_t, nleapfrog_t, cur, acceptance_y(t), t
+        del_range_t, nleapfrog_t, cur, acceptance_y(t), t, poisson_rng
       );
       current_params_t.col(t) = cur;                                                  // [NEW]
       // (You can optionally collect acc_t into a per-t vector if you want to save it)
@@ -2734,7 +2753,7 @@ Rcpp::List common_atoms_cat_lognormal_shared(
     //update alpha_1 (for the current data mixture)
     double l_alpha=log(alpha(0));
     arma::uvec ind0 = {0};
-    update_alpha(nmix1, nj_val(occu_hist, ind0), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0));
+    update_alpha(nmix1, nj_val(occu_hist, ind0), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph(0), poisson_rng);
     alpha(0)=exp(l_alpha);    dir_prec(0)= alpha(0)/nmix1;
 
     //update alpha_2,..., alpha_S (for the RWD mixture)
@@ -2742,7 +2761,7 @@ Rcpp::List common_atoms_cat_lognormal_shared(
     {
       double l_alpha=log(alpha(s));
       arma::uvec inds = {s};
-      update_alpha(nmix, nj_val(non_empty_clusters(s), inds), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph(s));
+      update_alpha(nmix, nj_val(non_empty_clusters(s), inds), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph(s), poisson_rng);
       alpha(s)=exp(l_alpha); dir_prec(s) = alpha(s)/nmix; prob_empty(s) = log(dir_prec(s));
     }
     /***********************************************************/
@@ -2895,7 +2914,10 @@ Rcpp::List common_atoms_cat_lognormal(const unsigned nmix, arma::uvec ncat,
                                       arma::uvec del1, arma::uvec del2,
                                       const arma::vec &del_range_lognorm, const unsigned nleapfrog_lognorm,
                                       const arma::vec &alpha_hyper, const arma::vec &del_range_alp1, const unsigned nleapfrog_alp1,
-                                      const arma::vec &del_range_alp2, const unsigned nleapfrog_alp2){
+                                      const arma::vec &del_range_alp2, const unsigned nleapfrog_alp2,
+                                      const unsigned cpp_rng_seed = 5489){
+  // Dedicated standard-C++ stream for Poisson-randomized HMC trajectory lengths.
+  std::mt19937_64 poisson_rng(cpp_rng_seed);
   unsigned acceptance=0, acceptance_alph1=0, acceptance_alph2=0;
   double mu_alp, sig_alp;
   sig_alp=log1p(alpha_hyper(1) /((alpha_hyper(0)) * (alpha_hyper(0)))); mu_alp=log(alpha_hyper(0))-sig_alp/2;sig_alp=sqrt(sig_alp);
@@ -3392,7 +3414,7 @@ Rcpp::List common_atoms_cat_lognormal(const unsigned nmix, arma::uvec ncat,
     update_lognorm_hyper(nj_val1, nj_val2, survtime1, ss_survtime1,
                          survtime2, ss_survtime2,
                          a0, df0, mu_m, mu_v, b_m, b_v,
-                         del_range_lognorm, nleapfrog_lognorm, current_params, acceptance);
+                         del_range_lognorm, nleapfrog_lognorm, current_params, acceptance, poisson_rng);
     mu0=current_params(0), beta0=exp(current_params(1));
     /*******************************************************/
 
@@ -3400,13 +3422,13 @@ Rcpp::List common_atoms_cat_lognormal(const unsigned nmix, arma::uvec ncat,
     /****** HMC UPDATE of Dirichlet mixture parameters**********/
     //update alpha_1 (for the nested mixture)
     double l_alpha=log(alpha1);
-    update_alpha(nmix1,   nj_val1(non_empty_clusters1), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph1);
+    update_alpha(nmix1,   nj_val1(non_empty_clusters1), mu_alp, sig_alp, del_range_alp1, nleapfrog_alp1, l_alpha, acceptance_alph1, poisson_rng);
     alpha1=exp(l_alpha);    dir_prec1=alpha1/nmix1;
     //////////////////////////
 
     //update alpha_2 (for the rwd mixture)
     l_alpha=log(alpha2);
-    update_alpha(nmix,   nj_val2(non_empty_clusters2), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph2);
+    update_alpha(nmix,   nj_val2(non_empty_clusters2), mu_alp, sig_alp, del_range_alp2, nleapfrog_alp2, l_alpha, acceptance_alph2, poisson_rng);
     alpha2=exp(l_alpha);    dir_prec2=alpha2/nmix; prob_empty2= log(dir_prec2);
     //////////////////////////
     /***********************************************************/

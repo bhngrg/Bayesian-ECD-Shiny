@@ -96,7 +96,11 @@ cd Bayesian-ECD-Shiny
 
 ## Install dependencies
 
-This app uses a mixture of regular R packages and C++-backed R packages. All listed R package dependencies are available from CRAN. The C++ code is compiled through `Rcpp`, `RcppArmadillo`, and `RcppDist`.
+This app uses a mixture of regular R packages and C++-backed R packages.
+All listed R package dependencies are available from CRAN. The C++ code is
+compiled through `Rcpp`, `RcppArmadillo`, and `RcppDist`, with Boost headers
+supplied through the CRAN `BH` package and numerical C++ utilities supplied
+through the CRAN `mlpack` package.
 
 ### Step 1: Install system requirements for compiled R packages
 
@@ -174,6 +178,8 @@ install.packages(c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
+  "BH",
+  "mlpack",
   "purrr",
   "rstudioapi",
   "mcclust",
@@ -210,6 +216,8 @@ required_packages <- c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
+  "BH",
+  "mlpack",
   "purrr",
   "rstudioapi",
   "mcclust",

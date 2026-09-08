@@ -26,6 +26,8 @@ required_packages <- c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
+  "BH",
+  "mlpack",
   "purrr",
   "rstudioapi",
   "mcclust",

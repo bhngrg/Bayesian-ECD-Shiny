@@ -207,6 +207,8 @@ install.packages(c(
   "Rcpp",
   "RcppArmadillo",
   "RcppDist",
+  "BH",
+  "mlpack",
   "purrr",
   "rstudioapi",
   "mcclust",
@@ -219,7 +221,9 @@ install.packages(c(
 
 The application includes C++ code that is compiled at runtime using
 `Rcpp::sourceCpp()`, with `RcppArmadillo` and `RcppDist` used by the
-underlying C++ implementation. Most users will receive precompiled R
+underlying C++ implementation, Boost headers supplied through the CRAN
+`BH` package, and numerical C++ utilities supplied through the CRAN `mlpack`
+package. Most users will receive precompiled R
 package binaries, but appropriate system build tools may be required if
 R installs packages from source.
 

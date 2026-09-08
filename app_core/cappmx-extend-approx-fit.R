@@ -1,6 +1,26 @@
 # Main approximate extended CA-PPMx fitting function.
 # Depends on Rcpp functions from Robust_stage_1and2.cpp.
 
+# Resolve one per-fit C++ Poisson RNG seed from the active R RNG stream so
+# ordinary set.seed() reproducibly controls both the R/RcppArmadillo draws
+# and std::mt19937_64 trajectory randomization used by the C++ sampler.
+.resolve_cpp_rng_seed <- function(cpp_rng_seed = NULL) {
+  if (is.null(cpp_rng_seed)) {
+    return(sample.int(.Machine$integer.max, 1L))
+  }
+
+  if (length(cpp_rng_seed) != 1L ||
+      !is.numeric(cpp_rng_seed) ||
+      !is.finite(cpp_rng_seed) ||
+      cpp_rng_seed != floor(cpp_rng_seed) ||
+      cpp_rng_seed < 0 ||
+      cpp_rng_seed > .Machine$integer.max) {
+    stop("cpp_rng_seed must be NULL or one integer in [0, .Machine$integer.max].")
+  }
+
+  as.integer(cpp_rng_seed)
+}
+
 ############# extract relevant MCMC storage ####################################
 extract_MCMC_storage <- function(input_df = NULL,
                                  input_specs = NULL,
@@ -15,7 +35,8 @@ extract_MCMC_storage <- function(input_df = NULL,
                                  del_range_alp2 = c(0.1, 0.3) * 3,
                                  nleapfrog_alp2 = 3,
                                  a0 = 10.1,   # clustering hyper
-                                 cc = 2       # prior mean scale for sigma^2
+                                 cc = 2,       # prior mean scale for sigma^2
+                                 cpp_rng_seed = NULL
 ) {
   nrun <- 59000; burn <- 1000; thin <- 5
   
@@ -222,6 +243,7 @@ extract_MCMC_storage <- function(input_df = NULL,
   eta.cont <- as.matrix(scale(eta.cont))  # z-scale all continuous columns
   
   # ---- call the Rcpp sampler -------------------------------------------------
+  cpp_rng_seed <- .resolve_cpp_rng_seed(cpp_rng_seed)
   CAPPMx.result <- background_MCMC_storage(
     dat_index = dat.index,
     trt_index = trt.index,
@@ -243,7 +265,8 @@ extract_MCMC_storage <- function(input_df = NULL,
     nleapfrog_alp1 = nleapfrog_alp1,
     del_range_alp2 = del_range_alp2,
     nleapfrog_alp2 = nleapfrog_alp2,
-    nrun = nrun, burn = burn, thin = thin
+    nrun = nrun, burn = burn, thin = thin,
+    cpp_rng_seed = cpp_rng_seed
   )
   
   # ---- augment return (same fields as before) --------------------------------
@@ -275,7 +298,8 @@ cappmx_fit=function(cat_cov_trt=NULL,cont_cov_trt=NULL, response_trt, surv_ind_t
                     nmix=15, nrun=5e3,burn=1e3,thin=5,
                     del_range_response=c(.005,.02)*15, nleapfrog_response=3,
                     del_range_alp1 = c(.1,.3)*5, nleapfrog_alp1 = 4,
-                    del_range_alp2 = c(.1,.3)*3, nleapfrog_alp2 = 3){
+                    del_range_alp2 = c(.1,.3)*3, nleapfrog_alp2 = 3,
+                    cpp_rng_seed = NULL){
   
   isnullcat1=is.null(cat_cov_trt); isnullcont1=is.null(cont_cov_trt); isnullcat2=is.null(cat_cov_rwd); isnullcont2=is.null(cont_cov_rwd)
   
@@ -405,7 +429,7 @@ cappmx_fit=function(cat_cov_trt=NULL,cont_cov_trt=NULL, response_trt, surv_ind_t
   b_m=log(m)- b_v/2
   mu_m= mean(log_observed_failure_times)
   mu_v= 1
-  
+  cpp_rng_seed <- .resolve_cpp_rng_seed(cpp_rng_seed)
   common_atoms_cat_lognormal( nmix, ncat=ncats,
                               a0=a0, df0=df0, mu_m=mu_m, mu_v=mu_v, b_m=b_m, b_v=b_v,#normal and lognormal hyperparameters for the response
                               nrun=nrun, burn=burn, thin=thin,
@@ -417,7 +441,8 @@ cappmx_fit=function(cat_cov_trt=NULL,cont_cov_trt=NULL, response_trt, surv_ind_t
                               labels1, labels2, 
                               del_range_lognorm=del_range_response, nleapfrog_lognorm=nleapfrog_response,
                               alpha_hyper = c(1,10),del_range_alp1 = del_range_alp1, nleapfrog_alp1 = nleapfrog_alp1,
-                              del_range_alp2 = del_range_alp2, nleapfrog_alp2 = nleapfrog_alp2)
+                              del_range_alp2 = del_range_alp2, nleapfrog_alp2 = nleapfrog_alp2,
+                              cpp_rng_seed = cpp_rng_seed)
 }
 
 ################################################################################
@@ -443,7 +468,8 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
                                      beta_cap_q          = c(0.10, 0.90),  # clamp β to control-based quantiles
                                      beta_var_floor_mult = 1.0,     # inflate floor on log-β variance if needed
                                      min_failures_for_EB = 3,       # below this, w := 0 (fall back to pool)
-                                     stage2_n_stored = 1200)
+                                     stage2_n_stored = 1200,
+                                     cpp_rng_seed = NULL)
 {
   # normalize inputs (avoid tibble one-index surprises)
   if (!is.null(input_df))      input_df      <- as.data.frame(input_df)
@@ -1187,7 +1213,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     # Pass these directly to C++:
     # mu_m_t = hp_t$mu_m_t, mu_v_t = hp_t$mu_v_t,
     # b_m_t  = hp_t$b_m_t,  b_v_t  = hp_t$b_v_t
-    
+    cpp_rng_seed <- .resolve_cpp_rng_seed(cpp_rng_seed)
     CAPPMx.result <- common_atoms_cat_lognormal_shared_approx(
       dat_index = dat.index,
       trt_index = trt.index,
@@ -1235,7 +1261,8 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       ## NEW (freeze control hyperparameters per draw)
       freeze_control = freeze_control,
       mu0_control_draws   = mu0_control_draws,      # vector length = length(new_M)
-      beta0_control_draws = beta0_control_draws     # vector length = length(new_M)
+      beta0_control_draws = beta0_control_draws,    # vector length = length(new_M)
+      cpp_rng_seed = cpp_rng_seed
     )
     
     CAPPMx.result$Treatment_Levels  <- trt_levels
@@ -2032,8 +2059,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
     # Pass these directly to C++:
     # mu_m_t = hp_t$mu_m_t, mu_v_t = hp_t$mu_v_t,
     # b_m_t  = hp_t$b_m_t,  b_v_t  = hp_t$b_v_t
-    
-    
+    cpp_rng_seed <- .resolve_cpp_rng_seed(cpp_rng_seed)
     CAPPMx.result <- common_atoms_cat_lognormal_shared_approx(
       dat_index = dat.index,
       trt_index = trt.index,
@@ -2081,7 +2107,8 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       ## NEW (freeze control hyperparameters per draw)
       freeze_control = freeze_control,
       mu0_control_draws   = mu0_control_draws,      # vector length = length(new_M)
-      beta0_control_draws = beta0_control_draws     # vector length = length(new_M)
+      beta0_control_draws = beta0_control_draws,    # vector length = length(new_M)
+      cpp_rng_seed = cpp_rng_seed
     )
     
     CAPPMx.result$Treatment_Levels  <- trt_levels
