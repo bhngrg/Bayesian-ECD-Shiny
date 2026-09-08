@@ -1,382 +1,151 @@
 # Bayesian-ECD Shiny App
 
-This repository contains the Bayesian-ECD Shiny application, which provides a local graphical interface for applying the Bayesian-ECD historical-borrowing workflow to a current randomized clinical trial (RCT). The application provides posterior survival and treatment-effect estimation, restricted mean survival time (RMST) summaries, prespecified subpopulation analyses, and prediction in new patient populations.
+This repository contains the Bayesian-ECD Shiny application, a local graphical interface for applying the Bayesian-ECD historical-borrowing workflow to a current randomized clinical trial (RCT). The application provides posterior survival and treatment-effect estimation, restricted mean survival time (RMST) summaries, prespecified subpopulation analyses, prediction in new patient populations, and an optional concurrent-control compatibility diagnostic.
 
-The application runs locally in R and uses stored posterior information from the historical Bayesian-ECD model, so current RCT data do not need to be uploaded to a separately hosted Bayesian-ECD service.
+The application runs locally in R and uses stored posterior information from the historical Bayesian-ECD model. Current RCT data therefore do not need to be uploaded to a separately hosted Bayesian-ECD service.
 
-## User guide
+## User Guide
 
-Detailed installation instructions, data requirements, analysis workflows, output descriptions, and troubleshooting guidance are provided in:
+For complete installation instructions, platform-specific setup, data requirements, analysis workflows, interpretation guidance, output descriptions, reproducibility recommendations, and troubleshooting, see:
 
 - [Bayesian-ECD Shiny User Guide](docs/Bayesian-ECD-Shiny-User-Guide.md)
 
 A rendered PDF version of the user guide is provided separately with the journal supplementary materials.
 
-## Repository structure
+The user guide is the primary reference for using the application. The example below is intended only as a quick orientation to the workflow.
 
-- `app/`: Shiny application files.
-- `app_core/`: Core modeling, plotting, RMST, subpopulation, and C++ helper routines used by the app.
-- `app/data/storedMCMCiter/`: Stored baseline MCMC components loaded by the app.
-- `analysis_utils/`: Additional user-facing analysis utilities that are not part of the Shiny interface.
-- `examples/`: Example R scripts showing how to run optional analyses outside the Shiny app.
-- `example_data/`: Example model-fitting and prediction datasets.
-- `docs/`: Source for the Bayesian-ECD Shiny supplementary user manual.
+## Quick Example
 
-## First-time R/RStudio setup
+### 1. Launch the application
 
-The application requires R version 4.2.2 or later. If you are new to R, install R first, then install RStudio Desktop.
-
-1. Download and install R from CRAN:  
-   https://cran.r-project.org/
-
-2. Download and install RStudio Desktop from Posit:  
-   https://posit.co/download/rstudio-desktop/
-
-After installing both, open RStudio and run the following in the RStudio Console:
-
-```r
-R.version.string
-```
-
-This should print your installed R version.
-
-## Where do I run commands?
-
-This README uses two types of commands.
-
-### R commands
-
-Commands marked as `r` should be run in the RStudio Console.
-
-Example:
-
-```r
-install.packages("shiny")
-```
-
-### Terminal or bash commands
-
-Commands marked as `bash` should be run in your system terminal.
-
-- macOS: use the Terminal app.
-- Linux: use Terminal.
-- Windows: use Git Bash, PowerShell, or the terminal inside RStudio.
-
-Example:
-
-```bash
-cd path/to/project-folder
-```
-
-If you are new to command-line tools, downloading the repository as a ZIP file is simpler than cloning with Git.
-
-## Download this repository
-
-You can get the repository onto your computer using either the ZIP download method or Git.
-
-### Option A: Download ZIP from GitHub
-
-This is the simplest option for first-time users.
-
-1. Go to the GitHub repository page.
-2. Click the green **Code** button.
-3. Click **Download ZIP**.
-4. Unzip the downloaded file.
-5. Open RStudio.
-6. In RStudio, go to **File > Open Project** if an `.Rproj` file is available, or use **Session > Set Working Directory > Choose Directory** and select the unzipped repository folder.
-
-### Option B: Clone with Git
-
-If you use Git, run the following in Terminal or Git Bash:
-
-```bash
-git clone https://github.com/bhngrg/Bayesian-ECD-Shiny.git
-cd Bayesian-ECD-Shiny
-```
-
-## Install dependencies
-
-This app uses a mixture of regular R packages and C++-backed R packages.
-All listed R package dependencies are available from CRAN. The C++ code is
-compiled through `Rcpp`, `RcppArmadillo`, and `RcppDist`, with Boost headers
-supplied through the CRAN `BH` package and numerical C++ utilities supplied
-through the CRAN `mlpack` package.
-
-### Step 1: Install system requirements for compiled R packages
-
-Most users will receive precompiled CRAN binaries through `install.packages()`, but the system requirements below are useful when R attempts to compile packages from source. Make sure your system has the usual R build tools installed.
-
-#### macOS
-
-Install Xcode command line tools by running this in Terminal:
-
-```bash
-xcode-select --install
-```
-
-On Apple Silicon Macs, such as M1, M2, M3, or M4 machines, some R packages may also require GNU Fortran if R tries to compile packages from source. This can show up as installation errors mentioning gfortran, Fortran, or ld: library not found for -lgfortran.
-
-If that happens, install the GNU Fortran tools recommended for R from:
-
-```text
-https://mac.r-project.org/tools/
-```
-
-After installing GNU Fortran, restart RStudio and rerun the R package installation commands below.
-
-You can check whether gfortran is visible by running this in Terminal:
-
-```bash
-which gfortran
-gfortran --version
-```
-
-If these commands do not find gfortran, R may not be able to compile packages that require Fortran code.
-
-Note: The GNU Fortran issue is a general macOS/R package installation issue that may occur when CRAN packages need to be compiled locally.
-
-#### Ubuntu/Debian Linux
-
-Install system build tools by running this in Terminal:
-
-```bash
-sudo apt-get update
-sudo apt-get install build-essential libcurl4-openssl-dev libssl-dev libxml2-dev
-```
-
-#### Windows
-
-Install Rtools for your version of R:
-
-https://cran.r-project.org/bin/windows/Rtools/
-
-After installing Rtools, restart RStudio before installing packages.
-
-### Step 2: Install R package dependencies
-
-Run this in the RStudio Console:
-
-```r
-install.packages(c(
-  "shiny",
-  "bslib",
-  "tibble",
-  "dplyr",
-  "readr",
-  "ggplot2",
-  "reshape2",
-  "plyr",
-  "foreach",
-  "doParallel",
-  "matrixStats",
-  "DT",
-  "patchwork",
-  "gridExtra",
-  "gt",
-  "writexl",
-  "zip",
-  "Rcpp",
-  "RcppArmadillo",
-  "RcppDist",
-  "BH",
-  "mlpack",
-  "purrr",
-  "rstudioapi",
-  "mcclust",
-  "cluster",
-  "e1071",
-  "randomForest",
-  "survival"
-))
-```
-
-### Step 3: Confirm package loading
-
-After installation, run this in the RStudio Console:
-
-```r
-required_packages <- c(
-  "shiny",
-  "bslib",
-  "tibble",
-  "dplyr",
-  "readr",
-  "ggplot2",
-  "reshape2",
-  "plyr",
-  "foreach",
-  "doParallel",
-  "matrixStats",
-  "DT",
-  "patchwork",
-  "gridExtra",
-  "gt",
-  "writexl",
-  "zip",
-  "Rcpp",
-  "RcppArmadillo",
-  "RcppDist",
-  "BH",
-  "mlpack",
-  "purrr",
-  "rstudioapi",
-  "mcclust",
-  "cluster",
-  "e1071",
-  "randomForest",
-  "survival"
-)
-
-missing_packages <- required_packages[
-  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
-]
-
-if (length(missing_packages) == 0) {
-  message("All required R packages are installed.")
-} else {
-  message("Missing packages: ", paste(missing_packages, collapse = ", "))
-}
-```
-
-## Run the app
-
-The recommended way to run the app is from **RStudio** using **Run in Window**.
-
-First, open the repository folder in RStudio. Make sure your working directory is the repository root folder.
-
-You can check your current working directory by running:
-
-```r
-getwd()
-```
-
-If needed, set the working directory manually. For example:
-
-```r
-setwd("path/to/your/repository-folder")
-```
-
-Then open:
+After completing the installation steps in the user guide, open:
 
 ```text
 app/app.R
 ```
 
-In RStudio, click the drop-down arrow next to **Run App** and select:
+in RStudio and select:
 
 ```text
-Run in Window
+Run App > Run in Window
 ```
 
-This is the preferred launch method for local testing. External browser mode can sometimes open multiple browser tabs if older Shiny sessions are still active.
-
-When finished, stop the app using the red **Stop** button in RStudio before launching it again.
-
-Alternatively, the app can be launched from the R console with:
+Alternatively, from the repository root, run:
 
 ```r
 shiny::runApp("app")
 ```
 
-However, for most users, **Run App > Run in Window** is recommended.
+The **Uploaded Data** tab is the starting point for the primary Bayesian-ECD workflow.
 
-## Example workflow
+### 2. Upload the example current-RCT dataset
 
-### 1. Upload model-fitting data
-
-Use the example model dataset in:
+Use:
 
 ```text
-example_data/
+example_data/example_model_data.csv
 ```
 
-In the **Uploaded Data** tab, enter the requested column names.
+Upload the file in the **Uploaded Data** tab and enter the requested column specifications.
 
-The model-fitting dataset should contain:
+The example dataset contains the information required by the Bayesian-ECD analysis, including patient identifiers, survival outcomes, censoring indicators, treatment and cohort information, and the baseline covariates used by the model.
 
-- patient ID
-- overall survival time
-- censoring indicator
-- treatment
-- cohort/source indicator
-- covariates used for modeling, such as age, sex, KPS, and extent of resection
+Detailed definitions, coding requirements, and input-format guidance are provided in the user guide.
 
-### 2. Optional control compatibility diagnostic
+### 3. Optionally run the control compatibility diagnostic
 
-After uploading the model-fitting dataset, the app includes an optional **Control Compatibility** tab for datasets containing a concurrent control arm labeled exactly:
+If the uploaded dataset contains a concurrent control arm labeled:
 
 ```text
 Control
 ```
 
-The diagnostic compares the observed concurrent-control survival experience with the historical Bayesian-ECD posterior predictive control distribution. It does not perform the Stage 2 Bayesian-ECD model extension used for the primary treatment analysis.
+the **Control Compatibility** tab can be used to compare the observed concurrent-control survival experience with the historical Bayesian-ECD posterior predictive control distribution.
 
-A concurrent control arm is not required to use the primary Bayesian-ECD analysis. See the user guide for details on running and interpreting the compatibility diagnostic.
+This diagnostic is optional and is separate from the primary Stage 2 Bayesian-ECD model extension. A concurrent control arm is not required to run the primary Bayesian-ECD analysis.
 
-### 3. View model outputs
+### 4. Review the primary Bayesian-ECD outputs
 
-Use the following tabs:
+After fitting the model, the main analysis results are available through:
 
-- **Plot Output**
-- **RMST Output**
-- **Subpopulation Analysis**
-- **Subpopulation RMST Output**
+- **Plot Output** for posterior survival and hazard-ratio summaries;
+- **RMST Output** for restricted mean survival time comparisons;
+- **Subpopulation Analysis** for survival or hazard-ratio summaries within a selected subpopulation; and
+- **Subpopulation RMST Output** for RMST comparisons within a selected subpopulation.
 
-### 4. Upload prediction data
+The user guide describes the available treatment selections, plot types, interpretation, and download options in detail.
 
-Use the example prediction dataset in:
+### 5. Upload the example prediction dataset
+
+To evaluate treatment-specific survival in a new covariate distribution, use:
 
 ```text
-example_data/
+example_data/example_prediction_data.csv
 ```
 
-The prediction dataset should contain:
+The prediction dataset contains patient identifiers and the baseline covariates required by the stored Bayesian-ECD model. It does not require observed survival outcomes, censoring indicators, treatment assignments, or cohort labels.
 
-- prediction patient ID
-- the same covariates used in model fitting
+Prediction results are available through:
 
-It does not need outcome, censoring, treatment, or cohort/source columns.
+- **Prediction Output**; and
+- **Prediction RMST Output**.
 
-### 5. View prediction outputs
+Optional subpopulation filters can also be applied to the prediction population.
 
-Use the following tabs:
+### 6. Optional posterior-probability analyses
 
-- **Prediction Output**
-- **Prediction RMST Output**
+Additional posterior-probability utilities are available outside the Shiny interface for analyses such as:
 
+- posterior probabilities for prespecified hazard-ratio thresholds;
+- posterior probabilities for RMST-difference thresholds; and
+- posterior probabilities for RMST-ratio thresholds.
 
-## Optional posterior probability utilities
-
-The Shiny app focuses on survival curves, hazard-ratio curves, RMST summaries, subpopulation analyses, and prediction outputs.
-
-Additional posterior probability utilities are provided in:
+The utility functions are located in:
 
 ```text
 analysis_utils/posterior-probability-utils.R
 ```
 
-An example script is provided in:
+A worked example is provided in:
 
 ```text
 examples/run_posterior_probabilities.R
 ```
 
-This script shows how to compute quantities such as:
+From the repository root, the example can be run with:
 
-- `P(HR(t) < threshold | Data)`
-- `P(RMST difference > threshold | Data)`
-- `P(RMST ratio > threshold | Data)`
+```r
+source("examples/run_posterior_probabilities.R")
+```
 
-The script can be opened in RStudio and run directly. It automatically locates the repository root when sourced from RStudio.
-
-Generated posterior probability outputs are saved to:
+Generated posterior-probability results are written to the Git-ignored:
 
 ```text
 outputs/
 ```
 
-The `outputs/` folder is ignored by Git because it contains user-generated results.
+directory.
 
-## Cross-platform notes
+## Repository Components
 
-The application is organized to run on Windows, macOS, and Linux. Platform-specific build requirements for R packages compiled from source are described above and in the user guide.
+The main repository directories are:
+
+- `app/`: Shiny application files.
+- `app_core/`: Core modeling, plotting, RMST, subpopulation, and C++ routines used by the application.
+- `app/data/storedMCMCiter/`: Stored Stage 1 Bayesian-ECD posterior components used by the application.
+- `analysis_utils/`: Optional analysis utilities that are not part of the Shiny interface.
+- `examples/`: Worked R examples for optional analyses.
+- `example_data/`: Example model-fitting and prediction datasets.
+- `docs/`: Bayesian-ECD Shiny User Guide documentation.
+
+## Reproducibility
+
+The stored Stage 1 posterior components under:
+
+```text
+app/data/storedMCMCiter/
+```
+
+are part of the computational specification of the application. Reproducible analyses should identify the repository version used and retain the corresponding input datasets, analysis settings, and outputs.
+
+See the [Bayesian-ECD Shiny User Guide](docs/Bayesian-ECD-Shiny-User-Guide.md) for the complete reproducibility recommendations.

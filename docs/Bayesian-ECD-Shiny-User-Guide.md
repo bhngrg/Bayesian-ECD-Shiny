@@ -222,10 +222,10 @@ install.packages(c(
 The application includes C++ code that is compiled at runtime using
 `Rcpp::sourceCpp()`, with `RcppArmadillo` and `RcppDist` used by the
 underlying C++ implementation, Boost headers supplied through the CRAN
-`BH` package, and numerical C++ utilities supplied through the CRAN `mlpack`
-package. Most users will receive precompiled R
-package binaries, but appropriate system build tools may be required if
-R installs packages from source.
+`BH` package, and numerical C++ utilities supplied through the CRAN
+`mlpack` package. Most users will receive precompiled R package
+binaries, but appropriate system build tools may be required if R
+installs packages from source.
 
 ### macOS
 
@@ -1189,9 +1189,7 @@ treatment divided by the hazard for the reference treatment.
 
 Conceptually, the quantity of interest is:
 
-$$
-P(HR(t) < c \mid \text{data})
-$$
+$$P(HR(t) < c \mid \text{data})$$
 
 where $t$ is the selected time point and $c$ is the user-specified
 hazard-ratio threshold.
@@ -1224,18 +1222,14 @@ RMST.
 For the RMST difference, users can evaluate a posterior probability of
 the form:
 
-$$
-P(\Delta_{\mathrm{RMST}} > c \mid \text{data})
-$$
+$$P(\Delta_{\mathrm{RMST}} > c \mid \text{data})$$
 
 where $c$ is a prespecified RMST-difference threshold.
 
 For the RMST ratio, users can evaluate a posterior probability of the
 form:
 
-$$
-P(R_{\mathrm{RMST}} > c \mid \text{data})
-$$
+$$P(R_{\mathrm{RMST}} > c \mid \text{data})$$
 
 where $c$ is a prespecified RMST-ratio threshold.
 
@@ -1300,6 +1294,15 @@ source("examples/run_posterior_probabilities.R")
 
 Users may also open the script directly in RStudio and run individual
 sections interactively.
+
+Generated posterior-probability outputs are written to:
+
+``` text
+outputs/
+```
+
+The `outputs/` directory contains user-generated analysis results and is
+ignored by Git.
 
 The example includes posterior-probability analyses for both the overall
 population and selected subpopulations.
