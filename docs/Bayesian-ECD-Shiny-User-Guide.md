@@ -28,11 +28,12 @@ Bhanu Garg
   Check](#optional-control-compatibility-check)
   - [Purpose of the Diagnostic](#purpose-of-the-diagnostic)
   - [Running the Compatibility Check](#running-the-compatibility-check)
-  - [Diagnostic Output](#diagnostic-output)
-  - [Interpreting the Compatibility
-    Assessment](#interpreting-the-compatibility-assessment)
-  - [Downloading the Compatibility
-    Plot](#downloading-the-compatibility-plot)
+  - [Compatibility Statistic](#compatibility-statistic)
+  - [Bootstrap Calibration and Compatibility
+    Assessment](#bootstrap-calibration-and-compatibility-assessment)
+  - [Diagnostic Survival Plot](#diagnostic-survival-plot)
+  - [Downloading Compatibility
+    Results](#downloading-compatibility-results)
 - [Primary Bayesian-ECD Outputs](#primary-bayesian-ecd-outputs)
   - [Plot Output](#plot-output)
     - [Selecting Treatments](#selecting-treatments)
@@ -79,6 +80,7 @@ Bhanu Garg
 - [Output Files](#output-files)
   - [Bayesian-ECD Model Results](#bayesian-ecd-model-results)
   - [Plot Downloads](#plot-downloads)
+  - [Compatibility Results Archive](#compatibility-results-archive)
   - [RMST Tables](#rmst-tables)
   - [File Organization](#file-organization)
 - [Privacy, Reproducibility, and Local
@@ -137,9 +139,9 @@ The main workflow is:
     indicator, treatment, cohort, and required baseline covariates.
 2.  **Optionally assess control compatibility** when the current RCT
     contains a concurrent control arm labeled `Control`. This diagnostic
-    compares the observed concurrent-control survival experience with
-    the historical Bayesian-ECD posterior predictive control
-    distribution.
+    uses a Stage 2 Bayesian-ECD fit to compare the observed
+    concurrent-control survival experience with covariate-standardized
+    Historical-Control posterior predictions.
 3.  **Examine the primary Bayesian-ECD results**, including
     treatment-specific survival curves, time-varying hazard-ratio
     curves, and RMST summaries.
@@ -152,7 +154,8 @@ The main workflow is:
     Shiny interface** using the utilities provided in the repository.
 
 The application also provides download options for plots, RMST tables,
-and selected Bayesian-ECD model results.
+selected Bayesian-ECD model results, and detailed results from the
+optional control compatibility diagnostic.
 
 > **Note:** The control compatibility diagnostic is optional. A
 > concurrent control arm is not required to proceed with the primary
@@ -506,7 +509,7 @@ analysis outputs.
 
 The **Control Compatibility** tab provides an optional diagnostic for
 assessing whether the concurrent control patients in the current RCT
-appear compatible with the historical control information represented by
+appear compatible with the Historical-Control information represented by
 the Bayesian-ECD model.
 
 This diagnostic is available when the uploaded current RCT dataset
@@ -525,21 +528,28 @@ with the other analysis tabs.
 ## Purpose of the Diagnostic
 
 The compatibility check compares the observed survival experience of the
-concurrent control patients with the historical Bayesian-ECD posterior
-predictive control distribution.
+concurrent control patients with Historical-Control survival predictions
+standardized to the covariate distribution of those concurrent controls.
 
-Only patients in the uploaded dataset whose treatment is labeled
-`Control` are included in the observed concurrent-control analysis.
-Uploaded experimental-treatment patients are not used. The historical
-posterior predictive control distribution is generated from the stored
-Bayesian-ECD posterior. The number of evaluable concurrent-control
-patients determines the sample size used when generating posterior
-predictive control-sample medians.
+Unlike a comparison based only on the stored Stage 1 posterior, the
+current compatibility diagnostic performs a Stage 2 Bayesian-ECD
+extension using the uploaded RCT. The concurrent-Control covariate
+profiles are supplied as the prediction population, while the Historical
+Control is retained as the reference treatment for the compatibility
+calculation.
 
-The diagnostic does not perform the Stage 2 Bayesian-ECD model extension
-used for the primary treatment analysis. Instead, it compares the
-observed current concurrent-control survival experience with the stored
-historical posterior predictive control distribution.
+Only evaluable patients in the uploaded dataset whose treatment is
+labeled `Control` contribute observed survival outcomes to the log-rank
+comparison. Their baseline covariates are also used to obtain
+corresponding Historical-Control posterior predictions. The remaining
+uploaded RCT patients contribute to the Stage 2 model fit but are not
+included as observed patients in the control-versus-control log-rank
+comparison.
+
+The diagnostic is intended as a supplementary assessment of the
+comparability of the concurrent and historical control information. It
+does not prevent the user from proceeding with the primary Bayesian-ECD
+analysis.
 
 ## Running the Compatibility Check
 
@@ -555,8 +565,8 @@ After the current RCT dataset has been uploaded and submitted in the
 
 If concurrent-control patients are available, the application reports
 how many were detected before the diagnostic is run. At least five
-concurrent-control patients with usable survival time and censoring
-information are required to perform the diagnostic.
+concurrent-control patients with usable positive survival times and
+censoring information are required to perform the diagnostic.
 
 The default plotting range is:
 
@@ -565,70 +575,149 @@ Minimum time: 150 days
 Maximum time: 1200 days
 ```
 
-These values define the time window used to generate and retain the
-diagnostic survival curves and may be changed by the user.
+These values control the displayed time range of the diagnostic survival
+plot. They do not define the observations used in the log-rank
+compatibility statistic.
 
-## Diagnostic Output
+The compatibility calculation includes a Stage 2 model fit and bootstrap
+calibration and may therefore require additional computation time.
 
-The compatibility diagnostic compares two sources of information:
+## Compatibility Statistic
 
-- the observed survival experience of the uploaded concurrent-control
-  patients; and
-- the historical Bayesian-ECD posterior predictive control distribution
-  generated from the stored historical posterior.
+The formal compatibility assessment is based on a posterior-predictive
+log-rank statistic.
 
-The observed concurrent-control survival distribution is summarized
-using the Kaplan–Meier estimator.
+The Stage 2 compatibility fit stores 1,200 posterior draws. The first
+200 stored draws are discarded as burn-in, leaving 1,000 retained
+posterior draws.
 
-The historical posterior predictive distribution is generated from the
-stored Bayesian-ECD posterior information.
+For each retained posterior draw, the application:
 
-The diagnostic displays the observed concurrent-control Kaplan–Meier
-curve with its 95% confidence interval together with the historical
-posterior predictive control curve and its 95% posterior interval.
+1.  obtains the predicted cluster allocation for each evaluable
+    concurrent-Control covariate profile;
+2.  extracts the corresponding Historical-Control log-normal survival
+    parameters;
+3.  generates one Historical-Control potential event time for each
+    concurrent-Control covariate profile; and
+4.  computes a log-rank chi-square statistic comparing the observed
+    concurrent-Control survival outcomes with the generated
+    Historical-Control potential outcomes.
 
-It also compares the observed Kaplan–Meier median survival time with the
-posterior predictive distribution of control-sample medians. For each
-selected posterior draw, the application generates a predictive control
-sample with the same number of evaluable patients as the uploaded
-concurrent-control arm and calculates its sample median. The 95%
-posterior predictive interval of these simulated sample medians is used
-for the compatibility assessment.
+This produces 1,000 posterior log-rank chi-square statistics. The **mean
+posterior log-rank chi-square statistic** is used as the primary
+compatibility statistic.
 
-## Interpreting the Compatibility Assessment
+The generated Historical-Control potential outcomes are uncensored event
+times. The observed concurrent-Control outcomes retain their uploaded
+event/censoring indicators.
 
-The diagnostic asks whether the observed concurrent-control median
-survival is consistent with the range of median survival values
-predicted from the historical Bayesian-ECD model.
+## Bootstrap Calibration and Compatibility Assessment
 
-If the observed Kaplan–Meier median falls within the 95% posterior
-predictive interval, the application reports the result as
-**Compatible**.
+The reference distribution for the compatibility statistic is obtained
+from the observed concurrent-Control data using a nonparametric
+bootstrap.
 
-If the observed Kaplan–Meier median falls outside the 95% posterior
-predictive interval, the application reports **Potential incompatibility
-detected**.
+By default, the application performs **500 bootstrap replicates**.
+Within each replicate, two samples, each having the same size as the
+evaluable concurrent-Control arm, are independently sampled with
+replacement from the observed concurrent controls. A log-rank chi-square
+statistic is then calculated between the two bootstrap samples.
 
-If the observed Kaplan–Meier median is not reached, the application does
-not make the median-based compatibility determination and instead
-reports **Observed KM median not reached; review curve-level
-agreement**.
+The bootstrap p-value is calculated as
 
-This assessment should be interpreted together with the displayed
-survival curves rather than solely as a binary decision.
+$$p_{\mathrm{boot}}
+=
+\frac{
+\#\left\{
+T_{\mathrm{boot}} \geq
+\overline{T}_{\mathrm{post}}
+\right\}
+}{
+B
+},$$
 
-> **Important:** The compatibility check is a diagnostic assessment. It
-> does not prevent the user from continuing to the primary Bayesian-ECD
-> analysis.
+where $\overline{T}_{\mathrm{post}}$ is the mean of the 1,000 posterior
+log-rank statistics and $B$ is the number of bootstrap replicates.
 
-## Downloading the Compatibility Plot
+The application reports:
+
+- **Compatible** when the bootstrap p-value is greater than or equal to
+  0.05; and
+- **Potential incompatibility detected** when the bootstrap p-value is
+  less than 0.05.
+
+The diagnostic summary displayed beneath the plot reports the evaluable
+concurrent-Control sample size, mean posterior log-rank chi-square
+statistic, bootstrap p-value, and resulting compatibility
+classification.
+
+> **Important:** The compatibility classification is based on the
+> bootstrap-calibrated mean posterior log-rank statistic. The survival
+> curves described below provide complementary graphical information and
+> do not themselves determine the classification.
+
+## Diagnostic Survival Plot
+
+The compatibility plot provides a graphical comparison of:
+
+- the observed concurrent-Control Kaplan–Meier survival curve with its
+  95% confidence interval; and
+- the covariate-standardized Historical-Control posterior survival curve
+  with its 95% posterior interval.
+
+The Historical-Control curve is standardized to the evaluable
+concurrent-Control covariate population. At each displayed time point,
+Historical-Control survival probabilities are calculated for the
+concurrent-Control covariate profiles and averaged within each retained
+posterior draw. Posterior summaries are then obtained across the
+retained draws.
+
+When the observed Kaplan–Meier median survival is reached, dashed
+reference lines identify the observed median on the plot. This median is
+provided as a descriptive feature of the observed survival distribution;
+it is not the statistic used to determine compatibility.
+
+The survival plot should be interpreted together with the bootstrap
+p-value and compatibility summary rather than as a separate binary test.
+
+## Downloading Compatibility Results
 
 The diagnostic plot can be saved using **Download Compatibility Plot
 (.png)**.
 
 The user may optionally specify the desired plot width and height in
 inches before downloading. If custom dimensions are not supplied, the
-application uses a default download size of 14 × 8 inches.
+application uses a default download size of 14 × 8 inches. PNG downloads
+use a white background.
+
+The complete compatibility results can also be saved using **Download
+Compatibility Results (.zip)**. The ZIP archive contains human-readable
+CSV files together with R objects that preserve the detailed
+computational results for reproducibility and further inspection.
+
+The archive includes:
+
+- `compatibility_summary.csv`: the compatibility statistic, bootstrap
+  result, and classification;
+- `km_curve.csv`: the observed concurrent-Control Kaplan–Meier curve;
+- `historical_posterior_curve.csv`: the Historical-Control posterior
+  survival curve;
+- `prediction_data.csv`: the concurrent-Control covariate profiles used
+  for prediction;
+- `posterior_logrank_statistics.csv`: the retained posterior log-rank
+  statistics;
+- `bootstrap_details.csv`: bootstrap statistics, deterministic seeds,
+  and sampled positions;
+- `historical_potential_outcomes.rds`: generated Historical-Control
+  potential outcomes;
+- `posterior_state.rds`: retained Historical-Control posterior state
+  used for prediction;
+- `compatibility_stage2_result.rds`: the complete Stage 2 compatibility
+  fit; and
+- `compatibility_result.rds`: the complete compatibility-result object.
+
+The compatibility PNG and ZIP filenames include the date and time at
+which they are downloaded.
 
 # Primary Bayesian-ECD Outputs
 
@@ -1415,6 +1504,22 @@ subgroup_plot_YYYYMMDD_HHMMSS.png
 prediction_plot_YYYYMMDD_HHMMSS.png
 control_compatibility_plot_YYYYMMDD_HHMMSS.png
 ```
+
+## Compatibility Results Archive
+
+In addition to the compatibility PNG, the **Control Compatibility** tab
+provides a ZIP archive containing the diagnostic summary, survival-curve
+data, posterior log-rank statistics, bootstrap details, and R objects
+needed for detailed inspection or reproducibility.
+
+The archive is named using the date and time at which it is downloaded:
+
+``` text
+control_compatibility_results_YYYYMMDD_HHMMSS.zip
+```
+
+See the **Optional Control Compatibility Check** section for the
+complete archive contents.
 
 ## RMST Tables
 

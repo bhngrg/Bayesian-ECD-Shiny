@@ -60,9 +60,11 @@ If the uploaded dataset contains a concurrent control arm labeled:
 Control
 ```
 
-the **Control Compatibility** tab can be used to compare the observed concurrent-control survival experience with the historical Bayesian-ECD posterior predictive control distribution.
+the **Control Compatibility** tab can be used to compare the observed concurrent-control survival experience with covariate-standardized Historical-Control predictions from a Stage 2 Bayesian-ECD fit.
 
-This diagnostic is optional and is separate from the primary Stage 2 Bayesian-ECD model extension. A concurrent control arm is not required to run the primary Bayesian-ECD analysis.
+The diagnostic generates Historical-Control potential outcomes across 1,000 retained posterior draws, summarizes the resulting log-rank chi-square statistics, and calibrates the mean posterior statistic against a 500-replicate nonparametric bootstrap distribution from the observed concurrent controls. The application reports the resulting bootstrap p-value together with the compatibility assessment and diagnostic survival plot.
+
+This diagnostic is optional. A concurrent control arm is not required to run the primary Bayesian-ECD analysis. Compatibility results can be downloaded as a PNG figure and as a ZIP archive containing detailed CSV and RDS outputs.
 
 ### 4. Review the primary Bayesian-ECD outputs
 
