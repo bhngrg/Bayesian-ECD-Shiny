@@ -206,7 +206,7 @@ ui <- tagList(
           min = 1,
           max = 50
         ),
-        submitButton("Run ECD-compatibility test")
+        submitButton("Submit")
       ),
       div(
         style = "width: 100%;",
@@ -1317,7 +1317,7 @@ server <- function(input, output, session) {
     validate(
       need(
         !is.null(control_compatibility_result()),
-        "Click 'Run ECD-compatibility test' in the sidebar to generate the compatibility plot."
+        "Click 'Submit' in the sidebar to generate the compatibility plot."
       )
     )
     
