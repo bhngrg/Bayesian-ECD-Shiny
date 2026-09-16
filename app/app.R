@@ -203,6 +203,13 @@ ui <- tagList(
           "downloadControlCompatibilityPlot",
           "Download Compatibility Plot (.png)",
           style = "width: 100%;"
+        ),
+        br(),
+        br(),
+        downloadButton(
+          "downloadControlCompatibilityResults",
+          "Download Compatibility Results (.zip)",
+          style = "width: 100%;"
         )
       )
     )
@@ -1223,27 +1230,27 @@ server <- function(input, output, session) {
           compatibility_model <- result.CAPPMx.base
           
           incProgress(
-            amount = 0.35,
-            detail = "Step 2 of 3: Computing the uploaded-control KM curve."
+            amount = 0.25,
+            detail = "Step 2 of 4: Fitting the Stage-2 compatibility model."
           )
           
           incProgress(
-            amount = 0.25,
-            detail = "Step 3 of 3: Computing the historical posterior predictive control survival bands and median interval."
+            amount = 0.20,
+            detail = "Step 3 of 4: Generating posterior predictive Historical-Control outcomes."
+          )
+
+          incProgress(
+            amount = 0.15,
+            detail = "Step 4 of 4: Computing log-rank statistics and bootstrap calibration."
           )
           
           out <- run_control_compatibility_check(
-            result = compatibility_model,
-            uploaded_data = uploaded_control_df,
-            time_col = input.specs()$response,
-            censor_col = input.specs()$censor_ind,
-            trt_col = input.specs()$trt_type,
+            result_CAPPMx = compatibility_model,
+            uploaded_data = uploaded_all_df,
+            input_specs = input.specs(),
             control_label = "Control",
             time_grid = time_grid,
-            burnin = 200L,
-            n_posterior_draws = 1000L,
-            conf_int = 0.95,
-            seed = 20260706L
+            conf_int = 0.95
           )
           
           incProgress(
@@ -1346,10 +1353,156 @@ server <- function(input, output, session) {
         plot = combined_grob,
         width = plot_width,
         height = plot_height,
-        dpi = 300
+        dpi = 300,
+        bg = "white"
       )
     }
   )
+
+  output$downloadControlCompatibilityResults <- downloadHandler(
+    filename = function() {
+      paste0(
+        "control_compatibility_results_",
+        format(Sys.time(), "%Y%m%d_%H%M%S"),
+        ".zip"
+      )
+    },
+    content = function(file) {
+      compatibility_result <- control_compatibility_result()
+
+      req(!is.null(compatibility_result))
+
+      export_dir <- tempfile("control_compatibility_results_")
+      dir.create(export_dir, recursive = TRUE)
+
+      on.exit(
+        unlink(export_dir, recursive = TRUE, force = TRUE),
+        add = TRUE
+      )
+
+      # --------------------------------------------------------
+      # Human-readable tabular outputs
+      # --------------------------------------------------------
+      utils::write.csv(
+        compatibility_result$summary,
+        file = file.path(export_dir, "compatibility_summary.csv"),
+        row.names = FALSE
+      )
+
+      utils::write.csv(
+        compatibility_result$km_curve,
+        file = file.path(export_dir, "km_curve.csv"),
+        row.names = FALSE
+      )
+
+      utils::write.csv(
+        compatibility_result$posterior_curve,
+        file = file.path(
+          export_dir,
+          "historical_posterior_curve.csv"
+        ),
+        row.names = FALSE
+      )
+
+      utils::write.csv(
+        compatibility_result$prediction_data,
+        file = file.path(export_dir, "prediction_data.csv"),
+        row.names = FALSE
+      )
+
+      posterior_logrank_df <- data.frame(
+        posterior_draw = seq_along(
+          compatibility_result$posterior_logrank$draws
+        ),
+        retained_stage2_row =
+          compatibility_result$posterior_state$retained_stage2_rows,
+        logrank_statistic =
+          compatibility_result$posterior_logrank$draws
+      )
+
+      utils::write.csv(
+        posterior_logrank_df,
+        file = file.path(
+          export_dir,
+          "posterior_logrank_statistics.csv"
+        ),
+        row.names = FALSE
+      )
+
+      bootstrap_objects <- compatibility_result$bootstrap$objects
+
+      bootstrap_details <- do.call(
+        rbind,
+        lapply(
+          bootstrap_objects,
+          function(x) {
+            data.frame(
+              bootstrap_index = x$bootstrap_index,
+              logrank_statistic = x$logrank_statistic,
+              trt1_seed = x$trt1_seed,
+              trt2_seed = x$trt2_seed,
+              trt1_positions = paste(
+                x$trt1_positions,
+                collapse = ";"
+              ),
+              trt2_positions = paste(
+                x$trt2_positions,
+                collapse = ";"
+              ),
+              stringsAsFactors = FALSE
+            )
+          }
+        )
+      )
+
+      utils::write.csv(
+        bootstrap_details,
+        file = file.path(export_dir, "bootstrap_details.csv"),
+        row.names = FALSE
+      )
+
+      # --------------------------------------------------------
+      # Exact R objects for reproducibility / deeper inspection
+      # --------------------------------------------------------
+      saveRDS(
+        compatibility_result$historical_potential_outcomes,
+        file = file.path(
+          export_dir,
+          "historical_potential_outcomes.rds"
+        )
+      )
+
+      saveRDS(
+        compatibility_result$posterior_state,
+        file = file.path(export_dir, "posterior_state.rds")
+      )
+
+      saveRDS(
+        compatibility_result$compatibility_stage2_result,
+        file = file.path(
+          export_dir,
+          "compatibility_stage2_result.rds"
+        )
+      )
+
+      saveRDS(
+        compatibility_result,
+        file = file.path(export_dir, "compatibility_result.rds")
+      )
+
+      files_to_zip <- list.files(
+        export_dir,
+        full.names = TRUE
+      )
+
+      zip::zip(
+        zipfile = file,
+        files = files_to_zip,
+        mode = "cherry-pick"
+      )
+    }
+  )
+
   
   make_main_survival_or_hr_plot <- function(
       plot_store_result,
@@ -1448,7 +1601,8 @@ server <- function(input, output, session) {
         width = as.numeric(output_width_px),
         height = as.numeric(output_height_px),
         units = "px",
-        dpi = 96
+        dpi = 96,
+        bg = "white"
       )
     } else if (!is.na(width_input) && is.na(height_input)) {
       ggsave(
@@ -1456,7 +1610,9 @@ server <- function(input, output, session) {
         plot = plot,
         device = "png",
         width = width_input,
-        units = "in"
+        units = "in",
+        dpi = 300,
+        bg = "white"
       )
     } else if (is.na(width_input) && !is.na(height_input)) {
       ggsave(
@@ -1464,7 +1620,9 @@ server <- function(input, output, session) {
         plot = plot,
         device = "png",
         height = height_input,
-        units = "in"
+        units = "in",
+        dpi = 300,
+        bg = "white"
       )
     } else {
       ggsave(
@@ -1473,7 +1631,9 @@ server <- function(input, output, session) {
         device = "png",
         width = width_input,
         height = height_input,
-        units = "in"
+        units = "in",
+        dpi = 300,
+        bg = "white"
       )
     }
   }
