@@ -37,3 +37,9 @@ docs/figures/
 
 # local Stage-1 regeneration utility
 scripts/regenerate_stored_stage1.R
+
+# local developer diagnostics
+diagnostics/
+
+# local pre-change snapshots
+*.pre_advisor_feedback

@@ -149,17 +149,17 @@ ui <- tagList(
     )
   ),
   
-  # Optional concurrent-control compatibility diagnostic
+  # ECD-compatibility test for the RCT-control arm
   nav_panel(
-    title = "Control Compatibility",
+    title = "ECD-compatibility test",
     layout_sidebar(
       helpText(
-        "Optional concurrent-control compatibility diagnostic. This check is available when the uploaded dataset contains a concurrent control arm. If your uploaded dataset does not include a concurrent control arm, you can still continue with the Bayesian-ECD analysis using the other tabs."
+        "The ECD-compatibility test assesses compatibility between the uploaded RCT-control arm and the Historical-Control information. This test is available when the uploaded dataset contains an RCT-control arm."
       ),
       sidebar = sidebar(
         width = 320,
         helpText(
-          "The concurrent control arm is assumed to be labeled exactly as: Control"
+          "The RCT-control arm is assumed to be labeled exactly as: Control"
         ),
         numericInput(
           "compat_min_time",
@@ -174,6 +174,22 @@ ui <- tagList(
           value = 1200,
           min = 10,
           max = 2500
+        ),
+        numericInput(
+          "compat_n_bootstrap",
+          "Bootstrap samples:",
+          value = 500,
+          min = 1,
+          max = 10000,
+          step = 1
+        ),
+        numericInput(
+          "compat_alpha",
+          "Significance level:",
+          value = 0.05,
+          min = 0.001,
+          max = 0.5,
+          step = 0.001
         ),
         helpText("Set a specific width and/or height when downloading the plot. If not specified, the download button will use the default plot size."),
         numericInput(
@@ -190,11 +206,11 @@ ui <- tagList(
           min = 1,
           max = 50
         ),
-        submitButton("Run compatibility check")
+        submitButton("Run ECD-compatibility test")
       ),
       div(
         style = "width: 100%;",
-        h4("Optional concurrent-control compatibility diagnostic"),
+        h4("ECD-compatibility test"),
         uiOutput("control_compatibility_status"),
         br(),
         plotOutput("control_compatibility_plot", height = "760px"),
@@ -1113,14 +1129,14 @@ server <- function(input, output, session) {
     if (!is.null(compatibility_error)) {
       return(tags$div(
         class = "alert alert-danger",
-        paste("Compatibility diagnostic failed:", compatibility_error)
+        paste("ECD-compatibility test failed:", compatibility_error)
       ))
     }
     
     if (is.null(input$file1)) {
       return(tags$div(
         class = "alert alert-info",
-        "Please upload a dataset in the Uploaded Data tab before running this check. This diagnostic is optional and is only available when the uploaded dataset includes concurrent-control patients."
+        "Please upload a dataset in the Uploaded Data tab before running this test. The ECD-compatibility test is available when the uploaded dataset includes an RCT-control arm."
       ))
     }
     
@@ -1155,9 +1171,9 @@ server <- function(input, output, session) {
       return(tags$div(
         class = "alert alert-warning",
         paste0(
-          "No concurrent-control patients were found for control label '",
+          "No RCT-control patients were found for control label '",
           "Control",
-          "'. This diagnostic requires a concurrent control arm, but you may still continue with the Bayesian-ECD analysis using the other tabs."
+          "'. The ECD-compatibility test requires an RCT-control arm, but you may still continue with the Bayesian-ECD analysis using the other tabs."
         )
       ))
     }
@@ -1167,7 +1183,7 @@ server <- function(input, output, session) {
       paste0(
         "Found ",
         control_n,
-        " uploaded concurrent-control patients. You can run the optional posterior predictive compatibility check."
+        " uploaded RCT-control patients. You can run the ECD-compatibility test."
       )
     )
   })
@@ -1179,17 +1195,32 @@ server <- function(input, output, session) {
     req(input.specs())
     req(input$compat_min_time)
     req(input$compat_max_time)
+    req(input$compat_n_bootstrap)
+    req(input$compat_alpha)
     
     control_compatibility_error_store(NULL)
     
     validate(
       need(
         control_compatibility_has_control(),
-        "No concurrent-control patients labeled 'Control' were found. This optional diagnostic is skipped, but you can continue with the Bayesian-ECD analysis using the other tabs."
+        "No RCT-control patients labeled 'Control' were found. The ECD-compatibility test cannot be run, but you can continue with the Bayesian-ECD analysis using the other tabs."
       ),
       need(
         input$compat_min_time < input$compat_max_time,
         "Minimum time must be smaller than maximum time."
+      ),
+      need(
+        is.finite(input$compat_n_bootstrap) &&
+          input$compat_n_bootstrap >= 1 &&
+          input$compat_n_bootstrap <= 10000 &&
+          input$compat_n_bootstrap == floor(input$compat_n_bootstrap),
+        "Bootstrap samples must be an integer between 1 and 10,000."
+      ),
+      need(
+        is.finite(input$compat_alpha) &&
+          input$compat_alpha > 0 &&
+          input$compat_alpha < 1,
+        "Significance level must be between 0 and 1."
       )
     )
     
@@ -1205,7 +1236,7 @@ server <- function(input, output, session) {
     validate(
       need(
         nrow(uploaded_control_df) > 0,
-        "No concurrent-control patients labeled 'Control' were found. This optional diagnostic is skipped, but you can continue with the Bayesian-ECD analysis using the other tabs."
+        "No RCT-control patients labeled 'Control' were found. The ECD-compatibility test cannot be run, but you can continue with the Bayesian-ECD analysis using the other tabs."
       )
     )
     
@@ -1216,14 +1247,14 @@ server <- function(input, output, session) {
     )
     
     showNotification(
-      "Starting optional concurrent-control compatibility diagnostic...",
+      "Starting ECD-compatibility test...",
       type = "message",
       duration = 5
     )
     
     tryCatch({
       withProgress(
-        message = "Running optional concurrent-control compatibility diagnostic",
+        message = "Running ECD-compatibility test",
         detail = "Step 1 of 3: Loading the stored historical Bayesian-ECD posterior.",
         value = 0.1, {
           
@@ -1250,16 +1281,18 @@ server <- function(input, output, session) {
             input_specs = input.specs(),
             control_label = "Control",
             time_grid = time_grid,
-            conf_int = 0.95
+            conf_int = 0.95,
+            n_bootstrap = as.integer(input$compat_n_bootstrap),
+            significance_level = input$compat_alpha
           )
           
           incProgress(
             amount = 0.30,
-            detail = "Compatibility diagnostic complete."
+            detail = "ECD-compatibility test complete."
           )
           
           showNotification(
-            "Control compatibility diagnostic is complete.",
+            "ECD-compatibility test is complete.",
             type = "message",
             duration = 5
           )
@@ -1271,7 +1304,7 @@ server <- function(input, output, session) {
       control_compatibility_error_store(conditionMessage(e))
       
       showNotification(
-        paste("Compatibility diagnostic failed:", conditionMessage(e)),
+        paste("ECD-compatibility test failed:", conditionMessage(e)),
         type = "error",
         duration = 10
       )
@@ -1284,7 +1317,7 @@ server <- function(input, output, session) {
     validate(
       need(
         !is.null(control_compatibility_result()),
-        "Click 'Run compatibility check' in the sidebar to generate the compatibility plot."
+        "Click 'Run ECD-compatibility test' in the sidebar to generate the compatibility plot."
       )
     )
     

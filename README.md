@@ -1,6 +1,6 @@
 # Bayesian-ECD Shiny App
 
-This repository contains the Bayesian-ECD Shiny application, a local graphical interface for applying the Bayesian-ECD historical-borrowing workflow to a current randomized clinical trial (RCT). The application provides posterior survival and treatment-effect estimation, restricted mean survival time (RMST) summaries, prespecified subpopulation analyses, prediction in new patient populations, and an optional concurrent-control compatibility diagnostic.
+This repository contains the Bayesian-ECD Shiny application, a local graphical interface for applying the Bayesian-ECD historical-borrowing workflow to a current randomized clinical trial (RCT). The application provides posterior survival and treatment-effect estimation, restricted mean survival time (RMST) summaries, prespecified subpopulation analyses, prediction in new patient populations, and an ECD-compatibility test for trials containing an RCT-control arm.
 
 The application runs locally in R and uses stored posterior information from the historical Bayesian-ECD model. Current RCT data therefore do not need to be uploaded to a separately hosted Bayesian-ECD service.
 
@@ -52,19 +52,19 @@ The example dataset contains the information required by the Bayesian-ECD analys
 
 Detailed definitions, coding requirements, and input-format guidance are provided in the user guide.
 
-### 3. Optionally run the control compatibility diagnostic
+### 3. Run the ECD-compatibility test
 
-If the uploaded dataset contains a concurrent control arm labeled:
+If the uploaded dataset contains an RCT-control arm labeled:
 
 ```text
 Control
 ```
 
-the **Control Compatibility** tab can be used to compare the observed concurrent-control survival experience with covariate-standardized Historical-Control predictions from a Stage 2 Bayesian-ECD fit.
+the **ECD-compatibility test** tab can be used to assess compatibility between the observed RCT-control survival experience and covariate-standardized Historical-Control predictions from a Stage 2 Bayesian-ECD fit.
 
-The diagnostic generates Historical-Control potential outcomes across 1,000 retained posterior draws, summarizes the resulting log-rank chi-square statistics, and calibrates the mean posterior statistic against a 500-replicate nonparametric bootstrap distribution from the observed concurrent controls. The application reports the resulting bootstrap p-value together with the compatibility assessment and diagnostic survival plot.
+The test generates Historical-Control potential outcomes across 1,000 retained posterior draws and summarizes the resulting log-rank chi-square statistics. The mean posterior log-rank statistic is calibrated against a nonparametric bootstrap distribution generated from the observed RCT-control patients. The number of bootstrap samples and significance level can be specified in the application.
 
-This diagnostic is optional. A concurrent control arm is not required to run the primary Bayesian-ECD analysis. Compatibility results can be downloaded as a PNG figure and as a ZIP archive containing detailed CSV and RDS outputs.
+The application reports the bootstrap p-value together with the compatibility assessment and survival plot. The ECD-compatibility test requires an RCT-control arm; when no RCT-control arm is available, the remaining Bayesian-ECD analyses can still be performed. Results can be downloaded as a PNG figure and as a ZIP archive containing detailed CSV and RDS outputs.
 
 ### 4. Review the primary Bayesian-ECD outputs
 
@@ -141,6 +141,15 @@ The main repository directories are:
 - `docs/`: Bayesian-ECD Shiny User Guide documentation.
 
 ## Reproducibility
+
+For reproducible stochastic analyses, set an R random-number seed immediately before launching the application:
+
+```r
+set.seed(12345)
+shiny::runApp("app")
+```
+
+The application uses the RNG state of the R session from which it is launched rather than imposing an independent default analysis seed. If `set.seed()` is not called, the existing R-session RNG state is used and stochastic results are not guaranteed to be reproducible across sessions.
 
 The stored Stage 1 posterior components under:
 

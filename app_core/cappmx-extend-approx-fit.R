@@ -716,7 +716,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       cov_loglik_cont = cov_loglik_cont,
       init_ids        = init_ids,
       nmix            = K,
-      rng_seed        = 500L
+      rng_seed        = sample.int(.Machine$integer.max, 1L)
     )
     ## Z_init is [R x N] with 0-based labels
     
@@ -1513,7 +1513,7 @@ cappmx_extend_approx_fit <- function(result_CAPPMx, input_df = NULL,
       cov_loglik_cont = cov_loglik_cont,
       init_ids        = init_ids,
       nmix            = K,
-      rng_seed        = 500L
+      rng_seed        = sample.int(.Machine$integer.max, 1L)
     )
     ## Z_init is [R x N] with 0-based labels
     

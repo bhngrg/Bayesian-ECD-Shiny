@@ -1,18 +1,18 @@
-# Posterior predictive concurrent-control compatibility check.
+# ECD-compatibility test for the RCT-control arm.
 #
-# This optional diagnostic compares the uploaded concurrent-control arm
+# This test compares the uploaded RCT-control arm
 # with Historical-Control posterior predictions standardized to the
-# concurrent-Control covariate population.
+# RCT-control covariate population.
 #
 # Primary compatibility statistic:
-#   1. Fit Stage 2 with concurrent-Control covariates supplied for prediction.
+#   1. Fit Stage 2 with RCT-control covariates supplied for prediction.
 #   2. Retain 1000 posterior draws after 200 stored-draw burn-in.
 #   3. Generate one uncensored Historical-Control potential outcome per
-#      concurrent-Control covariate profile and retained posterior draw.
+#      RCT-control covariate profile and retained posterior draw.
 #   4. Compute a log-rank chi-square statistic for every posterior draw.
 #   5. Use the MEAN posterior log-rank statistic as the observed statistic.
 #   6. Compare it with a paired nonparametric bootstrap null distribution
-#      generated from the uploaded concurrent Controls.
+#      generated from the uploaded RCT-control patients.
 #   7. Report p = r / B, where r is the number of bootstrap statistics at
 #      least as large as the mean posterior statistic.
 #
@@ -26,10 +26,9 @@ CONTROL_COMPAT_N_POSTERIOR_DRAWS <-
 
 CONTROL_COMPAT_BOOTSTRAP_REPLICATES <- 500L
 
-CONTROL_COMPAT_STAGE2_SEED <- 202609031L
-CONTROL_COMPAT_POTENTIAL_OUTCOME_SEED <- 702609031L
-CONTROL_COMPAT_BOOTSTRAP_TRT1_SEED_BASE <- 502609030L
-CONTROL_COMPAT_BOOTSTRAP_TRT2_SEED_BASE <- 552609030L
+# All stochastic components inherit from the active R RNG stream.
+# Users can therefore make an app session reproducible by calling
+# set.seed(...) before launching the application.
 
 
 compute_uploaded_control_km_curve <- function(
@@ -39,7 +38,7 @@ compute_uploaded_control_km_curve <- function(
     conf_int = 0.95
 ) {
   if (!requireNamespace("survival", quietly = TRUE)) {
-    stop("Package 'survival' is required for the control compatibility check.")
+    stop("Package 'survival' is required for the ECD-compatibility test.")
   }
 
   if (!time_col %in% names(control_df)) {
@@ -59,7 +58,7 @@ compute_uploaded_control_km_curve <- function(
 
   if (sum(keep) < 5L) {
     stop(
-      "Fewer than 5 uploaded concurrent-control patients have usable survival ",
+      "Fewer than 5 uploaded RCT-control patients have usable survival ",
       "time and censoring information."
     )
   }
@@ -82,7 +81,7 @@ compute_uploaded_control_km_curve <- function(
     survival = c(1, km_summary$surv),
     lower = c(1, km_summary$lower),
     upper = c(1, km_summary$upper),
-    curve = "Uploaded concurrent control KM"
+    curve = "Uploaded RCT-control KM"
   )
 
   fit_table <- summary(fit)$table
@@ -112,19 +111,18 @@ compute_uploaded_control_km_curve <- function(
 }
 
 
+draw_control_compatibility_seed <- function() {
+  sample.int(.Machine$integer.max, 1L)
+}
+
+
 make_control_compatibility_seed <- function(
     base_seed,
     index
 ) {
-  seed <- as.double(base_seed) + as.double(index)
-
-  if (
-    !is.finite(seed) ||
-    seed <= 0 ||
-    seed >= .Machine$integer.max
-  ) {
-    stop("Invalid deterministic compatibility seed.")
-  }
+  seed <- (
+    (as.double(base_seed) - 1) + as.double(index)
+  ) %% (.Machine$integer.max - 1) + 1
 
   as.integer(seed)
 }
@@ -136,7 +134,7 @@ fit_control_compatibility_stage2 <- function(
     input_specs,
     prediction_data,
     control_label = "Control",
-    seed = CONTROL_COMPAT_STAGE2_SEED
+    seed
 ) {
   set.seed(seed)
 
@@ -312,7 +310,7 @@ extract_control_compatibility_posterior_state <- function(
 
 generate_control_compatibility_potential_outcomes <- function(
     posterior_state,
-    seed = CONTROL_COMPAT_POTENTIAL_OUTCOME_SEED
+    seed
 ) {
   mu <- posterior_state$mu
   sig2 <- posterior_state$sig2
@@ -447,7 +445,7 @@ compute_control_compatibility_logrank_draws <- function(
 
   if (ncol(potential_time) != length(observed_time)) {
     stop(
-      "Observed concurrent Controls do not match the Historical-Control ",
+      "Observed RCT-control patients do not match the Historical-Control ",
       "prediction population."
     )
   }
@@ -546,8 +544,8 @@ run_one_control_compatibility_bootstrap <- function(
     bootstrap_index,
     observed_time,
     observed_status,
-    trt1_seed_base = CONTROL_COMPAT_BOOTSTRAP_TRT1_SEED_BASE,
-    trt2_seed_base = CONTROL_COMPAT_BOOTSTRAP_TRT2_SEED_BASE
+    trt1_seed_base,
+    trt2_seed_base
 ) {
   n_control <- length(observed_time)
 
@@ -598,16 +596,32 @@ run_one_control_compatibility_bootstrap <- function(
 run_control_compatibility_bootstrap <- function(
     observed_time,
     observed_status,
-    n_bootstrap = CONTROL_COMPAT_BOOTSTRAP_REPLICATES
+    n_bootstrap = CONTROL_COMPAT_BOOTSTRAP_REPLICATES,
+    significance_level = 0.05,
+    trt1_seed_base = draw_control_compatibility_seed(),
+    trt2_seed_base = draw_control_compatibility_seed()
 ) {
+  if (
+    length(n_bootstrap) != 1L ||
+    !is.numeric(n_bootstrap) ||
+    !is.finite(n_bootstrap) ||
+    n_bootstrap != floor(n_bootstrap) ||
+    n_bootstrap < 1 ||
+    n_bootstrap > 10000
+  ) {
+    stop("n_bootstrap must be an integer between 1 and 10,000.")
+  }
+
   n_bootstrap <- as.integer(n_bootstrap)
 
   if (
-    length(n_bootstrap) != 1L ||
-    is.na(n_bootstrap) ||
-    n_bootstrap < 1L
+    length(significance_level) != 1L ||
+    !is.numeric(significance_level) ||
+    !is.finite(significance_level) ||
+    significance_level <= 0 ||
+    significance_level >= 1
   ) {
-    stop("n_bootstrap must be a positive integer.")
+    stop("significance_level must be one number strictly between 0 and 1.")
   }
 
   ncores <- max(parallel::detectCores() - 1L, 1L)
@@ -628,16 +642,16 @@ run_control_compatibility_bootstrap <- function(
       .export = c(
         "make_control_compatibility_seed",
         "compute_logrank_statistic",
-        "run_one_control_compatibility_bootstrap",
-        "CONTROL_COMPAT_BOOTSTRAP_TRT1_SEED_BASE",
-        "CONTROL_COMPAT_BOOTSTRAP_TRT2_SEED_BASE"
+        "run_one_control_compatibility_bootstrap"
       )
     ),
     {
       run_one_control_compatibility_bootstrap(
         bootstrap_index = bootstrap_index,
         observed_time = observed_time,
-        observed_status = observed_status
+        observed_status = observed_status,
+        trt1_seed_base = trt1_seed_base,
+        trt2_seed_base = trt2_seed_base
       )
     }
   )
@@ -655,14 +669,15 @@ run_control_compatibility_bootstrap <- function(
   list(
     objects = bootstrap_objects,
     statistics = statistics,
-    q95 = as.numeric(
+    critical_value = as.numeric(
       stats::quantile(
         statistics,
-        probs = 0.95,
+        probs = 1 - significance_level,
         names = FALSE,
         type = 7
       )
     ),
+    significance_level = significance_level,
     n_bootstrap = n_bootstrap,
     ncores = ncores
   )
@@ -677,9 +692,38 @@ run_control_compatibility_check <- function(
     time_grid = seq(1, 1251, length.out = 201),
     conf_int = 0.95,
     n_bootstrap = CONTROL_COMPAT_BOOTSTRAP_REPLICATES,
-    stage2_seed = CONTROL_COMPAT_STAGE2_SEED,
-    potential_outcome_seed = CONTROL_COMPAT_POTENTIAL_OUTCOME_SEED
+    significance_level = 0.05,
+    stage2_seed = NULL,
+    potential_outcome_seed = NULL,
+    bootstrap_trt1_seed_base = NULL,
+    bootstrap_trt2_seed_base = NULL
 ) {
+  # Resolve all compatibility RNG streams once from the active R RNG
+  # stream. Calling set.seed(...) before launching the app therefore
+  # makes the complete compatibility calculation reproducible.
+  if (is.null(stage2_seed)) {
+    stage2_seed <- draw_control_compatibility_seed()
+  }
+  if (is.null(potential_outcome_seed)) {
+    potential_outcome_seed <- draw_control_compatibility_seed()
+  }
+  if (is.null(bootstrap_trt1_seed_base)) {
+    bootstrap_trt1_seed_base <- draw_control_compatibility_seed()
+  }
+  if (is.null(bootstrap_trt2_seed_base)) {
+    bootstrap_trt2_seed_base <- draw_control_compatibility_seed()
+  }
+
+  if (
+    length(significance_level) != 1L ||
+    !is.numeric(significance_level) ||
+    !is.finite(significance_level) ||
+    significance_level <= 0 ||
+    significance_level >= 1
+  ) {
+    stop("significance_level must be one number strictly between 0 and 1.")
+  }
+
   required_cols <- c(
     input_specs$response,
     input_specs$censor_ind,
@@ -702,7 +746,7 @@ run_control_compatibility_check <- function(
 
   if (length(control_rows) == 0L) {
     stop(
-      "No concurrent-control patients were found for control label '",
+      "No RCT-control patients were found for control label '",
       control_label,
       "'."
     )
@@ -722,7 +766,7 @@ run_control_compatibility_check <- function(
   )
 
   # Prediction and log-rank calculations must use the same evaluable
-  # concurrent-Control patients represented in the KM curve.
+  # RCT-control patients represented in the KM curve.
   control_df <- control_df[
     km_result$keep,
     ,
@@ -746,7 +790,7 @@ run_control_compatibility_check <- function(
 
   if (length(missing_prediction_variables) > 0L) {
     stop(
-      "Concurrent-control prediction data are missing covariate(s): ",
+      "RCT-control prediction data are missing covariate(s): ",
       paste(missing_prediction_variables, collapse = ", ")
     )
   }
@@ -803,7 +847,10 @@ run_control_compatibility_check <- function(
     run_control_compatibility_bootstrap(
       observed_time = observed_time,
       observed_status = observed_status,
-      n_bootstrap = n_bootstrap
+      n_bootstrap = n_bootstrap,
+      significance_level = significance_level,
+      trt1_seed_base = bootstrap_trt1_seed_base,
+      trt2_seed_base = bootstrap_trt2_seed_base
     )
 
   exceed_mean <- sum(
@@ -815,7 +862,7 @@ run_control_compatibility_check <- function(
     exceed_mean /
     bootstrap_result$n_bootstrap
 
-  compatible <- p_boot_mean >= 0.05
+  compatible <- p_boot_mean >= significance_level
 
   posterior_curve <-
     compute_covariate_specific_historical_control_curve(
@@ -831,7 +878,8 @@ run_control_compatibility_check <- function(
     observed_km_median = km_result$observed_median,
     posterior_logrank_mean = posterior_logrank$mean,
     posterior_logrank_median = posterior_logrank$median,
-    bootstrap_q95 = bootstrap_result$q95,
+    significance_level = significance_level,
+    bootstrap_critical_value = bootstrap_result$critical_value,
     bootstrap_exceedances_mean = exceed_mean,
     bootstrap_replicates = bootstrap_result$n_bootstrap,
     bootstrap_p_value_mean = p_boot_mean,
@@ -873,7 +921,7 @@ plot_control_compatibility_check <- function(
   ]
 
   km_data <- plot_data[
-    plot_data$curve == "Uploaded concurrent control KM",
+    plot_data$curve == "Uploaded RCT-control KM",
     ,
     drop = FALSE
   ]
@@ -962,7 +1010,7 @@ plot_control_compatibility_check <- function(
     ggplot2::labs(
       x = "Time",
       y = "Estimated Survival Probability",
-      title = "Optional Concurrent-Control Compatibility Diagnostic"
+      title = "ECD-compatibility test"
     ) +
     ggplot2::theme_bw() +
     ggplot2::theme(
@@ -991,12 +1039,16 @@ make_control_compatibility_summary_grob <- function(
   }
 
   table_df <- data.frame(
-    `Control N` =
+    `RCT-control N` =
       summary_df$n_evaluable_control[1],
     `Mean posterior log-rank chi-square` =
       round(summary_df$posterior_logrank_mean[1], 3),
     `Bootstrap p-value` =
       round(summary_df$bootstrap_p_value_mean[1], 3),
+    `Bootstrap samples` =
+      summary_df$bootstrap_replicates[1],
+    `Significance level` =
+      summary_df$significance_level[1],
     `Result` =
       compatibility_label,
     check.names = FALSE
