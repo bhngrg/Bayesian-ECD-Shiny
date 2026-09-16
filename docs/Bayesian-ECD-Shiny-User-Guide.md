@@ -24,10 +24,10 @@ Bhanu Garg
     - [Karnofsky Performance Status](#karnofsky-performance-status)
     - [Extent of Resection](#extent-of-resection)
   - [Uploading the Dataset](#uploading-the-dataset)
-- [Optional Control Compatibility
-  Check](#optional-control-compatibility-check)
+- [ECD-compatibility Test](#ecd-compatibility-test)
   - [Purpose of the Diagnostic](#purpose-of-the-diagnostic)
-  - [Running the Compatibility Check](#running-the-compatibility-check)
+  - [Running the ECD-compatibility
+    Test](#running-the-ecd-compatibility-test)
   - [Compatibility Statistic](#compatibility-statistic)
   - [Bootstrap Calibration and Compatibility
     Assessment](#bootstrap-calibration-and-compatibility-assessment)
@@ -87,6 +87,7 @@ Bhanu Garg
   Execution](#privacy-reproducibility-and-local-execution)
   - [Local Execution](#local-execution)
   - [Reproducibility](#reproducibility)
+    - [Random-number generation](#random-number-generation)
   - [Stored Bayesian-ECD Information](#stored-bayesian-ecd-information)
   - [Research Use](#research-use)
 - [Troubleshooting](#troubleshooting)
@@ -95,8 +96,8 @@ Bhanu Garg
     Accepted](#the-uploaded-dataset-is-not-accepted)
   - [Treatment Selections Are Missing or
     Incorrect](#treatment-selections-are-missing-or-incorrect)
-  - [The Control Compatibility Check Cannot Be
-    Run](#the-control-compatibility-check-cannot-be-run)
+  - [The ECD-compatibility Test Cannot Be
+    Run](#the-ecd-compatibility-test-cannot-be-run)
   - [A Subpopulation Contains Too Few
     Patients](#a-subpopulation-contains-too-few-patients)
   - [Prediction Data Are Not
@@ -137,11 +138,11 @@ The main workflow is:
 1.  **Upload the current RCT dataset** and specify the columns
     containing the patient ID, overall survival outcome, censoring
     indicator, treatment, cohort, and required baseline covariates.
-2.  **Optionally assess control compatibility** when the current RCT
-    contains a concurrent control arm labeled `Control`. This diagnostic
-    uses a Stage 2 Bayesian-ECD fit to compare the observed
-    concurrent-control survival experience with covariate-standardized
-    Historical-Control posterior predictions.
+2.  **Run the ECD-compatibility test** when the current RCT contains an
+    RCT-control arm labeled `Control`. This test uses a Stage 2
+    Bayesian-ECD fit to compare the observed RCT-control survival
+    experience with covariate-standardized Historical-Control posterior
+    predictions.
 3.  **Examine the primary Bayesian-ECD results**, including
     treatment-specific survival curves, time-varying hazard-ratio
     curves, and RMST summaries.
@@ -155,11 +156,11 @@ The main workflow is:
 
 The application also provides download options for plots, RMST tables,
 selected Bayesian-ECD model results, and detailed results from the
-optional control compatibility diagnostic.
+ECD-compatibility test.
 
-> **Note:** The control compatibility diagnostic is optional. A
-> concurrent control arm is not required to proceed with the primary
-> Bayesian-ECD analysis.
+> **Note:** The ECD-compatibility test is available when the uploaded
+> RCT contains an RCT-control arm. An RCT-control arm is not required to
+> proceed with the remaining Bayesian-ECD analyses.
 
 # Installation and Launch
 
@@ -387,8 +388,8 @@ Control
 Other treatment labels may identify the experimental treatment arms in
 the current RCT.
 
-The exact `Control` label is particularly important if the optional
-**Control Compatibility** diagnostic will be used.
+The exact `Control` label is particularly important when the
+**ECD-compatibility test** will be used.
 
 ### Cohort
 
@@ -505,38 +506,36 @@ analysis outputs.
 > 1 level structure and will report an error if an unseen category is
 > encountered.
 
-# Optional Control Compatibility Check
+# ECD-compatibility Test
 
-The **Control Compatibility** tab provides an optional diagnostic for
-assessing whether the concurrent control patients in the current RCT
-appear compatible with the Historical-Control information represented by
-the Bayesian-ECD model.
+The **ECD-compatibility test** tab assesses whether the RCT-control
+patients in the current RCT appear compatible with the
+Historical-Control information represented by the Bayesian-ECD model.
 
-This diagnostic is available when the uploaded current RCT dataset
-contains a concurrent control arm. The control treatment must be labeled
-exactly:
+This test is available when the uploaded current RCT dataset contains an
+RCT-control arm. The RCT-control treatment must be labeled exactly:
 
 ``` text
 Control
 ```
 
-A concurrent control arm is **not required** to use the primary
-Bayesian-ECD analysis. If no patients labeled `Control` are present, the
-compatibility diagnostic cannot be performed, but the user may continue
+An RCT-control arm is **not required** to use the remaining Bayesian-ECD
+analyses. If no patients labeled `Control` are present, the
+ECD-compatibility test cannot be performed, but the user may continue
 with the other analysis tabs.
 
 ## Purpose of the Diagnostic
 
-The compatibility check compares the observed survival experience of the
-concurrent control patients with Historical-Control survival predictions
-standardized to the covariate distribution of those concurrent controls.
+The ECD-compatibility test compares the observed survival experience of
+the RCT-control patients with Historical-Control survival predictions
+standardized to the covariate distribution of those RCT-control
+patients.
 
 Unlike a comparison based only on the stored Stage 1 posterior, the
-current compatibility diagnostic performs a Stage 2 Bayesian-ECD
-extension using the uploaded RCT. The concurrent-Control covariate
-profiles are supplied as the prediction population, while the Historical
-Control is retained as the reference treatment for the compatibility
-calculation.
+ECD-compatibility test performs a Stage 2 Bayesian-ECD extension using
+the uploaded RCT. The RCT-control covariate profiles are supplied as the
+prediction population, while the Historical Control is retained as the
+reference treatment for the compatibility calculation.
 
 Only evaluable patients in the uploaded dataset whose treatment is
 labeled `Control` contribute observed survival outcomes to the log-rank
@@ -546,27 +545,27 @@ uploaded RCT patients contribute to the Stage 2 model fit but are not
 included as observed patients in the control-versus-control log-rank
 comparison.
 
-The diagnostic is intended as a supplementary assessment of the
-comparability of the concurrent and historical control information. It
-does not prevent the user from proceeding with the primary Bayesian-ECD
-analysis.
+The test provides an assessment of the comparability of the RCT-control
+and Historical-Control information. Its result does not prevent the user
+from proceeding with the remaining Bayesian-ECD analyses.
 
-## Running the Compatibility Check
+## Running the ECD-compatibility Test
 
 After the current RCT dataset has been uploaded and submitted in the
 **Uploaded Data** tab:
 
-1.  Open the **Control Compatibility** tab.
-2.  Confirm that the application has detected concurrent-control
-    patients.
+1.  Open the **ECD-compatibility test** tab.
+2.  Confirm that the application has detected RCT-control patients.
 3.  Select the minimum and maximum times to display in the diagnostic
     plot.
-4.  Click **Run compatibility check**.
+4.  Specify the number of bootstrap samples. The default is **500**.
+5.  Specify the significance level. The default is **0.05**.
+6.  Click **Run ECD-compatibility test**.
 
-If concurrent-control patients are available, the application reports
-how many were detected before the diagnostic is run. At least five
-concurrent-control patients with usable positive survival times and
-censoring information are required to perform the diagnostic.
+If RCT-control patients are available, the application reports how many
+were detected before the test is run. At least five RCT-control patients
+with usable positive survival times and censoring information are
+required to perform the test.
 
 The default plotting range is:
 
@@ -594,38 +593,39 @@ posterior draws.
 For each retained posterior draw, the application:
 
 1.  obtains the predicted cluster allocation for each evaluable
-    concurrent-Control covariate profile;
+    RCT-control covariate profile;
 2.  extracts the corresponding Historical-Control log-normal survival
     parameters;
 3.  generates one Historical-Control potential event time for each
-    concurrent-Control covariate profile; and
+    RCT-control covariate profile; and
 4.  computes a log-rank chi-square statistic comparing the observed
-    concurrent-Control survival outcomes with the generated
-    Historical-Control potential outcomes.
+    RCT-control survival outcomes with the generated Historical-Control
+    potential outcomes.
 
 This produces 1,000 posterior log-rank chi-square statistics. The **mean
 posterior log-rank chi-square statistic** is used as the primary
 compatibility statistic.
 
 The generated Historical-Control potential outcomes are uncensored event
-times. The observed concurrent-Control outcomes retain their uploaded
+times. The observed RCT-control outcomes retain their uploaded
 event/censoring indicators.
 
 ## Bootstrap Calibration and Compatibility Assessment
 
 The reference distribution for the compatibility statistic is obtained
-from the observed concurrent-Control data using a nonparametric
-bootstrap.
+from the observed RCT-control data using a nonparametric bootstrap.
 
-By default, the application performs **500 bootstrap replicates**.
-Within each replicate, two samples, each having the same size as the
-evaluable concurrent-Control arm, are independently sampled with
-replacement from the observed concurrent controls. A log-rank chi-square
-statistic is then calculated between the two bootstrap samples.
+By default, the application performs **500 bootstrap replicates**. The
+number of bootstrap samples is user configurable. Within each replicate,
+two samples, each having the same size as the evaluable RCT-control arm,
+are independently sampled with replacement from the observed RCT-control
+patients. A log-rank chi-square statistic is then calculated between the
+two bootstrap samples.
 
 The bootstrap p-value is calculated as
 
-$$p_{\mathrm{boot}}
+$$
+p_{\mathrm{boot}}
 =
 \frac{
 \#\left\{
@@ -634,22 +634,23 @@ T_{\mathrm{boot}} \geq
 \right\}
 }{
 B
-},$$
+},
+$$
 
 where $\overline{T}_{\mathrm{post}}$ is the mean of the 1,000 posterior
 log-rank statistics and $B$ is the number of bootstrap replicates.
 
-The application reports:
+The significance level, denoted by $\alpha$, is user configurable and
+defaults to **0.05**. The application reports:
 
-- **Compatible** when the bootstrap p-value is greater than or equal to
-  0.05; and
-- **Potential incompatibility detected** when the bootstrap p-value is
-  less than 0.05.
+- **Compatible** when $p_{\mathrm{boot}} \geq \alpha$; and
+- **Potential incompatibility detected** when
+  $p_{\mathrm{boot}} < \alpha$.
 
-The diagnostic summary displayed beneath the plot reports the evaluable
-concurrent-Control sample size, mean posterior log-rank chi-square
-statistic, bootstrap p-value, and resulting compatibility
-classification.
+The summary displayed beneath the plot reports the evaluable RCT-control
+sample size, mean posterior log-rank chi-square statistic, bootstrap
+p-value, number of bootstrap samples, significance level, and resulting
+compatibility classification.
 
 > **Important:** The compatibility classification is based on the
 > bootstrap-calibrated mean posterior log-rank statistic. The survival
@@ -660,15 +661,15 @@ classification.
 
 The compatibility plot provides a graphical comparison of:
 
-- the observed concurrent-Control Kaplan–Meier survival curve with its
-  95% confidence interval; and
+- the observed RCT-control Kaplan–Meier survival curve with its 95%
+  confidence interval; and
 - the covariate-standardized Historical-Control posterior survival curve
   with its 95% posterior interval.
 
 The Historical-Control curve is standardized to the evaluable
-concurrent-Control covariate population. At each displayed time point,
+RCT-control covariate population. At each displayed time point,
 Historical-Control survival probabilities are calculated for the
-concurrent-Control covariate profiles and averaged within each retained
+RCT-control covariate profiles and averaged within each retained
 posterior draw. Posterior summaries are then obtained across the
 retained draws.
 
@@ -697,17 +698,18 @@ computational results for reproducibility and further inspection.
 
 The archive includes:
 
-- `compatibility_summary.csv`: the compatibility statistic, bootstrap
-  result, and classification;
-- `km_curve.csv`: the observed concurrent-Control Kaplan–Meier curve;
+- `compatibility_summary.csv`: the evaluable RCT-control sample size,
+  mean posterior log-rank statistic, bootstrap p-value, number of
+  bootstrap samples, significance level, and compatibility
+  classification;
+- `km_curve.csv`: the observed RCT-control Kaplan–Meier curve;
 - `historical_posterior_curve.csv`: the Historical-Control posterior
   survival curve;
-- `prediction_data.csv`: the concurrent-Control covariate profiles used
-  for prediction;
+- `prediction_data.csv`: the RCT-control covariate profiles used for
+  prediction;
 - `posterior_logrank_statistics.csv`: the retained posterior log-rank
   statistics;
-- `bootstrap_details.csv`: bootstrap statistics, deterministic seeds,
-  and sampled positions;
+- `bootstrap_details.csv`: bootstrap statistics and sampled positions;
 - `historical_potential_outcomes.rds`: generated Historical-Control
   potential outcomes;
 - `posterior_state.rds`: retained Historical-Control posterior state
@@ -741,10 +743,9 @@ Select:
 1.  the **reference treatment**; and
 2.  the **comparison treatment**.
 
-For a comparison of an experimental treatment with the concurrent
-control arm, for example, `Control` would typically be selected as the
-reference treatment and the experimental treatment as the comparison
-treatment.
+For a comparison of an experimental treatment with the RCT-control arm,
+for example, `Control` would typically be selected as the reference
+treatment and the experimental treatment as the comparison treatment.
 
 ### Selecting a Plot
 
@@ -1278,7 +1279,9 @@ treatment divided by the hazard for the reference treatment.
 
 Conceptually, the quantity of interest is:
 
-$$P(HR(t) < c \mid \text{data})$$
+$$
+P(HR(t) < c \mid \text{data})
+$$
 
 where $t$ is the selected time point and $c$ is the user-specified
 hazard-ratio threshold.
@@ -1311,14 +1314,18 @@ RMST.
 For the RMST difference, users can evaluate a posterior probability of
 the form:
 
-$$P(\Delta_{\mathrm{RMST}} > c \mid \text{data})$$
+$$
+P(\Delta_{\mathrm{RMST}} > c \mid \text{data})
+$$
 
 where $c$ is a prespecified RMST-difference threshold.
 
 For the RMST ratio, users can evaluate a posterior probability of the
 form:
 
-$$P(R_{\mathrm{RMST}} > c \mid \text{data})$$
+$$
+P(R_{\mathrm{RMST}} > c \mid \text{data})
+$$
 
 where $c$ is a prespecified RMST-ratio threshold.
 
@@ -1484,15 +1491,14 @@ Download options are available for:
 - RMST plots;
 - subpopulation survival or hazard-ratio plots;
 - prediction survival or hazard-ratio plots; and
-- the optional concurrent-control compatibility plot.
+- the ECD-compatibility plot.
 
 For plots that provide width and height controls, users may specify the
 desired dimensions in inches before downloading the figure.
 
 If dimensions are not specified, the primary, RMST, subpopulation, and
 prediction plot downloads use the displayed plot dimensions. The
-concurrent-control compatibility plot uses a default download size of 14
-× 8 inches.
+ECD-compatibility plot uses a default download size of 14 × 8 inches.
 
 The saved plots are named using the date and time at which they are
 downloaded, for example:
@@ -1507,10 +1513,10 @@ control_compatibility_plot_YYYYMMDD_HHMMSS.png
 
 ## Compatibility Results Archive
 
-In addition to the compatibility PNG, the **Control Compatibility** tab
-provides a ZIP archive containing the diagnostic summary, survival-curve
-data, posterior log-rank statistics, bootstrap details, and R objects
-needed for detailed inspection or reproducibility.
+In addition to the compatibility PNG, the **ECD-compatibility test** tab
+provides a ZIP archive containing the test summary, survival-curve data,
+posterior log-rank statistics, bootstrap details, and R objects needed
+for detailed inspection or reproducibility.
 
 The archive is named using the date and time at which it is downloaded:
 
@@ -1518,8 +1524,8 @@ The archive is named using the date and time at which it is downloaded:
 control_compatibility_results_YYYYMMDD_HHMMSS.zip
 ```
 
-See the **Optional Control Compatibility Check** section for the
-complete archive contents.
+See the **ECD-compatibility Test** section for the complete archive
+contents.
 
 ## RMST Tables
 
@@ -1582,6 +1588,25 @@ security requirements applicable to their datasets and computing
 environments.
 
 ## Reproducibility
+
+### Random-number generation
+
+The Bayesian-ECD application uses the random-number generator (RNG)
+state of the R session from which it is launched. For reproducible
+analyses, users are strongly encouraged to set an R random-number seed
+immediately before launching the application:
+
+``` r
+set.seed(12345)
+shiny::runApp("app")
+```
+
+The application does not impose an independent default analysis seed. If
+`set.seed()` is not called, the application uses the existing R-session
+RNG state, and stochastic results are not guaranteed to be reproducible
+across separate R sessions. With identical inputs, analysis settings,
+software version, and R-session seed, stochastic application
+computations are intended to be reproducible.
 
 Reproducible use of the application requires retaining both the analysis
 inputs and sufficient information about the software environment used to
@@ -1701,27 +1726,26 @@ Control
 Pay particular attention to capitalization, spelling, and leading or
 trailing spaces in treatment labels.
 
-## The Control Compatibility Check Cannot Be Run
+## The ECD-compatibility Test Cannot Be Run
 
-The compatibility diagnostic requires concurrent-control patients in the
-uploaded current RCT dataset.
+The ECD-compatibility test requires RCT-control patients in the uploaded
+current RCT dataset.
 
-The concurrent control treatment must be labeled exactly:
+The RCT-control treatment must be labeled exactly:
 
 ``` text
 Control
 ```
 
 If no such patients are present, the diagnostic cannot be performed.
-This does **not** prevent the user from continuing with the primary
-Bayesian-ECD analysis.
+This does **not** prevent the user from continuing with the remaining
+Bayesian-ECD analyses.
 
-If concurrent controls are present but the diagnostic cannot be run,
-verify that the treatment column was specified correctly in the
-**Uploaded Data** tab and that the uploaded dataset was successfully
-read. At least five concurrent-control patients with usable survival
-time and censoring information are required for the compatibility
-diagnostic.
+If RCT-control patients are present but the test cannot be run, verify
+that the treatment column was specified correctly in the **Uploaded
+Data** tab and that the uploaded dataset was successfully read. At least
+five RCT-control patients with usable survival time and censoring
+information are required for the ECD-compatibility test.
 
 ## A Subpopulation Contains Too Few Patients
 
@@ -1766,8 +1790,7 @@ values are valid.
 If custom dimensions are not required, leave the corresponding fields
 unspecified. The primary, RMST, subpopulation, and prediction plot
 downloads will use the displayed plot dimensions, while the
-concurrent-control compatibility plot uses a default download size of 14
-× 8 inches.
+ECD-compatibility plot uses a default download size of 14 × 8 inches.
 
 The location of the downloaded file depends on the browser or RStudio
 viewer being used to display the application.
