@@ -891,7 +891,7 @@ server <- function(input, output, session) {
           ref_trt = input$ref_treatment_selection,
           del_range_response_1 = c(0.005, 0.02) * 8,
           del_range_response_2 = c(0.005, 0.02) * 9,
-          del_range_alp1 = c(0.1, 0.3) * 2.8
+          del_range_alp1 = c(0.1, 0.3) * 2.3
         )
       }
     )
@@ -915,7 +915,7 @@ server <- function(input, output, session) {
           input_df_pred = pred_data(),
           del_range_response_1 = c(0.005, 0.02) * 8,
           del_range_response_2 = c(0.005, 0.02) * 9,
-          del_range_alp1 = c(0.1, 0.3) * 2.8
+          del_range_alp1 = c(0.1, 0.3) * 2.3
         )
       }
     )
