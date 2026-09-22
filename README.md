@@ -16,6 +16,11 @@ The user guide is the primary reference for using the application. The example b
 
 ## Quick Example
 
+The example datasets included with the repository can be used to walk through
+the main Bayesian-ECD workflow. The screenshots below illustrate one example
+analysis using Control as the reference treatment and Drug A as the comparison
+treatment.
+
 ### 1. Launch the application
 
 After completing the installation steps in the user guide, open:
@@ -36,7 +41,16 @@ Alternatively, from the repository root, run:
 shiny::runApp("app")
 ```
 
-The **Uploaded Data** tab is the starting point for the primary Bayesian-ECD workflow.
+For a reproducible example run, a random-number seed can be set immediately
+before launching the application:
+
+```r
+set.seed(12345)
+shiny::runApp("app")
+```
+
+The **Uploaded Data** tab is the starting point for the primary Bayesian-ECD
+workflow.
 
 ### 2. Upload the example current-RCT dataset
 
@@ -46,57 +60,168 @@ Use:
 example_data/example_model_data.csv
 ```
 
-Upload the file in the **Uploaded Data** tab and enter the requested column specifications.
+In the **Uploaded Data** tab, enter the column names corresponding to the
+patient ID, overall survival, censoring indicator, treatment, cohort, age, sex,
+KPS, and extent of resection (EOR), and then select the example CSV file.
 
-The example dataset contains the information required by the Bayesian-ECD analysis, including patient identifiers, survival outcomes, censoring indicators, treatment and cohort information, and the baseline covariates used by the model.
+For the censoring indicator, `TRUE` denotes an observed event/death and `FALSE`
+denotes a censored patient/alive at last follow-up. The application supports
+one current trial dataset at a time, so the cohort column should contain a
+single cohort value. The categorical variables must use the
+labels expected by the stored model: `Female` and `Male` for sex; `> 80`,
+`(60, 80]`, and `<= 60` for KPS; and `GTR`, `STR`, and `biopsy` for EOR.
 
-Detailed definitions, coding requirements, and input-format guidance are provided in the user guide.
+![Example model-data setup](docs/images/01_model_data_setup.png)
 
-### 3. Run the ECD-compatibility test
+Click **Submit**. The uploaded data are displayed in the application so that
+the selected variables and their values can be reviewed before proceeding.
 
-If the uploaded dataset contains an RCT-control arm labeled:
+![Uploaded example model dataset](docs/images/02_model_data_uploaded.png)
 
-```text
-Control
-```
+Detailed variable definitions, coding requirements, and input-format guidance
+are provided in the user guide.
 
-the **ECD-compatibility test** tab can be used to assess compatibility between the observed RCT-control survival experience and covariate-standardized Historical-Control predictions from a Stage 2 Bayesian-ECD fit.
+### 3. Review the ECD-compatibility test
 
-The test generates Historical-Control potential outcomes across 1,000 retained posterior draws and summarizes the resulting log-rank chi-square statistics. The mean posterior log-rank statistic is calibrated against a nonparametric bootstrap distribution generated from the observed RCT-control patients. The number of bootstrap samples and significance level can be specified in the application.
+When the uploaded trial contains an RCT-control arm labeled exactly `Control`,
+the application evaluates the **ECD-compatibility test** using the current
+compatibility settings. With the example dataset, the compatibility analysis
+begins automatically after the uploaded data become available.
 
-The application reports the bootstrap p-value together with the compatibility assessment and survival plot. The ECD-compatibility test requires an RCT-control arm; when no RCT-control arm is available, the remaining Bayesian-ECD analyses can still be performed. Results can be downloaded as a PNG figure and as a ZIP archive containing detailed CSV and RDS outputs.
+The test compares the observed RCT-control survival experience with
+covariate-standardized Historical-Control predictions from a Stage 2
+Bayesian-ECD fit. Historical-Control potential outcomes are generated across
+1,000 retained posterior draws, producing a posterior distribution of log-rank
+chi-square statistics. The mean posterior log-rank statistic is then calibrated
+against a nonparametric bootstrap distribution generated from the observed
+RCT-control patients.
 
-### 4. Review the primary Bayesian-ECD outputs
+The default settings use a plotting range of 150 to 1,200 days, 500 bootstrap
+samples, and a significance level of 0.05. These settings can be changed in the
+sidebar and the test rerun by clicking **Submit**.
 
-After fitting the model, the main analysis results are available through:
+![ECD-compatibility test results](docs/images/03_compatibility_test_results.png)
 
-- **Plot Output** for posterior survival and hazard-ratio summaries;
-- **RMST Output** for restricted mean survival time comparisons;
-- **Subpopulation Analysis** for survival or hazard-ratio summaries within a selected subpopulation; and
-- **Subpopulation RMST Output** for RMST comparisons within a selected subpopulation.
+The displayed summary reports the RCT-control sample size, mean posterior
+log-rank statistic, bootstrap p-value, number of bootstrap samples, significance
+level, and resulting compatibility assessment. The plot can be downloaded as a
+PNG, and detailed compatibility results can be downloaded as a ZIP archive.
 
-The user guide describes the available treatment selections, plot types, interpretation, and download options in detail.
+If the uploaded dataset does not contain an RCT-control arm labeled `Control`,
+the compatibility test is unavailable, but the remaining Bayesian-ECD analyses
+can still be performed.
 
-### 5. Upload the example prediction dataset
+### 4. Examine posterior survival or hazard-ratio results
 
-To evaluate treatment-specific survival in a new covariate distribution, use:
+The **Plot Output** tab provides posterior survival-probability and
+time-varying hazard-ratio summaries. Select a reference treatment, comparison
+treatment, plot type, and time range, and click **Submit**.
+
+For example, the analysis below compares Drug A with Control using posterior
+survival probabilities from 150 to 1,200 days.
+
+![Control versus Drug A posterior survival](docs/images/04_survival_control_vs_drug_a.png)
+
+The displayed plot can be downloaded as a PNG. The underlying Bayesian-ECD
+results can also be downloaded as a ZIP archive for additional analysis.
+
+### 5. Examine RMST results
+
+The **RMST Output** tab summarizes restricted mean survival time for a selected
+treatment comparison and time horizon. The example below compares Drug A with
+Control at a horizon of 730.5 days (2 years).
+
+![Control versus Drug A RMST results](docs/images/05_rmst_control_vs_drug_a.png)
+
+The output displays treatment-specific RMST curves together with posterior
+summaries of the RMST difference and RMST ratio. The combined RMST figure can
+be downloaded as a PNG.
+
+### 6. Perform a subpopulation analysis
+
+The **Subpopulation Analysis** tab repeats the survival or hazard-ratio analysis
+within a user-defined subset of the uploaded RCT population. Subpopulations can
+be defined using sex, EOR, KPS, and age.
+
+For categorical variables, leaving a selection empty leaves that variable
+unrestricted. Selecting all available categories likewise does not restrict
+that variable. For age, the lower bound is included and the upper bound is
+excluded.
+
+The example below compares Drug A with Control among Female patients aged
+48 to <81 years, with EOR and KPS unrestricted. In interval notation, the age
+selection is `[48, 81)`. The resulting plot also reports the number of patients
+meeting the selected criteria.
+
+![Example subpopulation analysis](docs/images/06_subpopulation_survival.png)
+
+The **Subpopulation RMST Output** tab uses the treatment comparison and
+subpopulation defined in the **Subpopulation Analysis** tab. Specify the RMST
+horizon and click **Submit**. The example below uses a 730.5-day horizon.
+
+![Example subpopulation RMST results](docs/images/07_subpopulation_rmst.png)
+
+The resulting RMST table can be downloaded as a CSV file.
+
+### 7. Upload the example prediction dataset
+
+Bayesian-ECD can also generate treatment-specific predictions for a new patient
+population with a different covariate distribution. Use:
 
 ```text
 example_data/example_prediction_data.csv
 ```
 
-The prediction dataset contains patient identifiers and the baseline covariates required by the stored Bayesian-ECD model. It does not require observed survival outcomes, censoring indicators, treatment assignments, or cohort labels.
+in the **Prediction Data** tab.
 
-Prediction results are available through:
+Unlike the model-fitting dataset, the prediction dataset requires only a
+patient ID and the baseline covariates used by the model. It does not require
+observed survival outcomes, censoring indicators, treatment assignments, or
+cohort labels.
 
-- **Prediction Output**; and
-- **Prediction RMST Output**.
+![Uploaded example prediction dataset](docs/images/08_prediction_data_uploaded.png)
 
-Optional subpopulation filters can also be applied to the prediction population.
+After entering the prediction patient-ID column and selecting the CSV file,
+click **Submit** to make the prediction population available to the prediction
+tabs.
 
-### 6. Optional posterior-probability analyses
+### 8. Generate predictions for the new population
 
-Additional posterior-probability utilities are available outside the Shiny interface for analyses such as:
+The **Prediction Output** tab generates posterior survival-probability or
+time-varying hazard-ratio summaries standardized to the covariate distribution
+of the uploaded prediction population.
+
+By default, all patients in the prediction dataset are used. Selecting
+**Apply subpopulation filters to prediction dataset** exposes optional sex,
+EOR, KPS, and age filters. As in the RCT subpopulation analysis, the minimum
+age is included and the maximum age is excluded.
+
+The example below compares Drug A with Control for the complete example
+prediction dataset over 150 to 1,200 days.
+
+![Control versus Drug A prediction results](docs/images/09_prediction_survival_control_vs_drug_a.png)
+
+The plot reports the number of prediction patients included in the analysis and
+can be downloaded as a PNG.
+
+### 9. Examine prediction-population RMST
+
+The **Prediction RMST Output** tab uses the same treatment comparison and
+prediction cohort or subpopulation selected in the **Prediction Output** tab.
+Specify an RMST horizon and click **Submit**.
+
+The example below uses the complete example prediction population and a
+730.5-day horizon.
+
+![Prediction-population RMST results](docs/images/10_prediction_rmst.png)
+
+The table reports posterior RMST summaries for the two treatments together with
+their difference and ratio and can be downloaded as a CSV file.
+
+### 10. Optional posterior-probability analyses
+
+Additional posterior-probability utilities are available outside the Shiny
+interface for analyses such as:
 
 - posterior probabilities for prespecified hazard-ratio thresholds;
 - posterior probabilities for RMST-difference thresholds; and

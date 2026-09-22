@@ -9,6 +9,11 @@ __MACOSX/
 *.zip
 *.xlsx
 *.png
+
+# Keep documentation screenshots
+!docs/images/
+!docs/images/*.png
+
 *.pdf
 
 # local scratch folders / accidental large data dumps
