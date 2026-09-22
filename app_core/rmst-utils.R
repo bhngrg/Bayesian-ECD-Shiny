@@ -71,8 +71,9 @@ rmst_lognormal <- function(result, cntrl, trt, t_star, burnin = 200) {
   
   timepoints <- log(seq(.Machine$double.neg.eps, t_star, length.out = 200))
   
-  ncores <- max(parallel::detectCores() - 1, 1)
-  cl <- parallel::makeCluster(ncores)
+  cl <- make_bayesian_ecd_cluster(
+    n_tasks = length(mu1)
+  )
   doParallel::registerDoParallel(cl)
   
   on.exit({
@@ -260,8 +261,9 @@ RMST_result <- function(result_subgroup_data = list(), time_horizons = c()) {
     ))
   })
   
-  ncores <- max(parallel::detectCores() - 1, 1)
-  cl <- parallel::makeCluster(ncores)
+  cl <- make_bayesian_ecd_cluster(
+    n_tasks = length(timepoints)
+  )
   doParallel::registerDoParallel(cl)
   
   on.exit({

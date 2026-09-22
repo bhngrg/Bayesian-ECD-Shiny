@@ -305,11 +305,9 @@ subgroup_data <- function(result,
     )
   }
 
-  cl <- ifelse((parallel::detectCores() - 1) > 1,
-               parallel::detectCores() - 1,
-               1)
-
-  cl <- parallel::makeCluster(cl)
+  cl <- make_bayesian_ecd_cluster(
+    n_tasks = length(timepoints)
+  )
   doParallel::registerDoParallel(cl)
 
   on.exit({

@@ -624,10 +624,10 @@ run_control_compatibility_bootstrap <- function(
     stop("significance_level must be one number strictly between 0 and 1.")
   }
 
-  ncores <- max(parallel::detectCores() - 1L, 1L)
-  ncores <- min(ncores, n_bootstrap)
-
-  cl <- parallel::makeCluster(ncores)
+  cl <- make_bayesian_ecd_cluster(
+    n_tasks = n_bootstrap
+  )
+  ncores <- length(cl)
   doParallel::registerDoParallel(cl)
 
   on.exit({

@@ -114,6 +114,12 @@ app_core_dir <- file.path(repo_root, "app_core")
 
 message("Using repository root: ", repo_root)
 
+# Establish the native-thread policy before compiling/loading the C++
+# implementation. Application-level parallelism is handled separately
+# through PSOCK workers.
+source(file.path(app_core_dir, "parallel-utils.R"))
+set_bayesian_ecd_single_thread()
+
 Rcpp::sourceCpp(file.path(app_core_dir, "Robust_stage_1and2.cpp"))
 source(file.path(app_core_dir, "survival-utils.R"))
 source(file.path(app_core_dir, "cappmx-extend-approx-fit.R"))

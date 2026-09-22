@@ -231,6 +231,14 @@ underlying C++ implementation, Boost headers supplied through the CRAN
 binaries, but appropriate system build tools may be required if R
 installs packages from source.
 
+The application uses cross-platform parallel processing for selected
+computationally intensive analyses. When multiple processor cores are
+available, the application automatically selects a conservative number
+of parallel workers while reserving capacity for the main R/Shiny
+process. Numerical-library threading is limited within each worker to
+avoid oversubscribing the available CPU resources. No additional
+parallel-computing package beyond those listed above is required.
+
 ### macOS
 
 Install the Xcode Command Line Tools from Terminal:

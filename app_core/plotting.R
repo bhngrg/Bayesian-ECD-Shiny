@@ -76,8 +76,9 @@ plots_lognormal <- function(result, cntrl, trt, timepoints, burnin = 1e3,
   # - Do NOT use .packages = "ExtendedCAPPMx"
   # - Export local sourced functions to workers instead
   # ------------------------------------------------------------
-  ncores <- max(parallel::detectCores() - 1, 1)
-  cl <- parallel::makeCluster(ncores)
+  cl <- make_bayesian_ecd_cluster(
+    n_tasks = length(mu1)
+  )
   doParallel::registerDoParallel(cl)
   
   on.exit({
