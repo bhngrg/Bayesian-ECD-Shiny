@@ -552,7 +552,11 @@ from proceeding with the remaining Bayesian-ECD analyses.
 ## Running the ECD-compatibility Test
 
 After the current RCT dataset has been uploaded and submitted in the
-**Uploaded Data** tab:
+**Uploaded Data** tab, the ECD-compatibility test becomes available when
+RCT-control patients are detected. The test runs using the current
+compatibility settings.
+
+To review or change these settings:
 
 1.  Open the **ECD-compatibility test** tab.
 2.  Confirm that the application has detected RCT-control patients.
@@ -560,12 +564,12 @@ After the current RCT dataset has been uploaded and submitted in the
     plot.
 4.  Specify the number of bootstrap samples. The default is **500**.
 5.  Specify the significance level. The default is **0.05**.
-6.  Click **Run ECD-compatibility test**.
+6.  Click **Submit** to rerun the test using the selected settings.
 
 If RCT-control patients are available, the application reports how many
-were detected before the test is run. At least five RCT-control patients
-with usable positive survival times and censoring information are
-required to perform the test.
+were detected. At least five RCT-control patients with usable positive
+survival times and censoring information are required to perform the
+test.
 
 The default plotting range is:
 
