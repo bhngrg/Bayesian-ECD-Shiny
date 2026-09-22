@@ -41,8 +41,7 @@ Alternatively, from the repository root, run:
 shiny::runApp("app")
 ```
 
-For a reproducible example run, a random-number seed can be set immediately
-before launching the application:
+Optionally, set a random-number seed before launching the application:
 
 ```r
 set.seed(12345)
@@ -264,24 +263,3 @@ The main repository directories are:
 - `examples/`: Worked R examples for optional analyses.
 - `example_data/`: Example model-fitting and prediction datasets.
 - `docs/`: Bayesian-ECD Shiny User Guide documentation.
-
-## Reproducibility
-
-For reproducible stochastic analyses, set an R random-number seed immediately before launching the application:
-
-```r
-set.seed(12345)
-shiny::runApp("app")
-```
-
-The application uses the RNG state of the R session from which it is launched rather than imposing an independent default analysis seed. If `set.seed()` is not called, the existing R-session RNG state is used and stochastic results are not guaranteed to be reproducible across sessions.
-
-The stored Stage 1 posterior components under:
-
-```text
-app/data/storedMCMCiter/
-```
-
-are part of the computational specification of the application. Reproducible analyses should identify the repository version used and retain the corresponding input datasets, analysis settings, and outputs.
-
-See the [Bayesian-ECD Shiny User Guide](docs/Bayesian-ECD-Shiny-User-Guide.md) for the complete reproducibility recommendations.
